@@ -17,6 +17,8 @@ una API V3 por dispositivo.
 - `download_v3.py`: cliente de descarga con checkpoints, reintentos y gzip.
 - `docs/API_V3.md`: contrato y decisiones operativas.
 - `docs/INTEGRACION.md`: registro junto a las rutas legacy.
+- `docs/HISTORICO_CSV_GITHUB.md`: arquitectura aplicada para publicar
+  históricos mensuales en GitHub sin saturar MariaDB.
 - `tests/`: pruebas unitarias de cursores y validación.
 
 ## Uso del descargador
@@ -53,6 +55,8 @@ permite recorrer el índice sin ordenar todo el rango histórico en cada página
 
 ## Estado
 
-Primera fase: consulta paginada y streaming reanudable. Para descargas de varios
-años y muchos dispositivos, la fase siguiente debe usar exportaciones
-asíncronas y almacenamiento externo.
+La API V3 mantiene consultas paginadas y streaming reanudable para integraciones
+controladas. Para el sitio público Aire Aconcagua, los históricos se publican
+como CSV mensuales en GitHub Pages y la API se reserva para una última lectura
+acotada. La implementación y las verificaciones operativas se describen en
+`docs/HISTORICO_CSV_GITHUB.md`.
