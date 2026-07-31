@@ -86,6 +86,44 @@ def _decode_cursor(value: str | None) -> tuple[int, datetime, int] | None:
         raise ValueError("cursor inválido") from error
 
 
+def _preview_row_key(row: dict[str, Any]) -> tuple[str, ...]:
+    """Clave estable para ordenar y paginar filas anchas recientes."""
+    return (
+        str(_serialize(row.get("fecha"))),
+        str(_serialize(row.get("codigo_interno"))),
+        str(_serialize(row.get("fecha_insercion"))),
+        str(_serialize(row.get("id_sesion"))),
+        str(_serialize(row.get("id_dato_concatenado"))),
+    )
+
+
+def _encode_preview_cursor(row: dict[str, Any]) -> str:
+    payload = json.dumps(
+        list(_preview_row_key(row)),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def _decode_preview_cursor(value: str | None) -> tuple[str, ...] | None:
+    if not value:
+        return None
+    try:
+        padding = "=" * (-len(value) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(value + padding).decode())
+        if (
+            not isinstance(payload, list)
+            or len(payload) != 5
+            or not all(isinstance(item, str) for item in payload)
+        ):
+            raise ValueError
+        datetime.fromisoformat(payload[0])
+        return tuple(payload)
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        raise ValueError("cursor de vista previa inválido") from error
+
+
 def _parse_date(value: str | None, field: str) -> date:
     if not value:
         raise ValueError(f"{field} es obligatorio")
@@ -483,6 +521,7 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         start: date,
         end: date,
         page_size: int = MAX_PAGE_SIZE,
+        latest_before: datetime | None = None,
     ) -> Iterator[dict[str, Any]]:
         cursor_value: tuple[datetime, int] | None = None
         while True:
@@ -492,6 +531,9 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
                 "d.fecha < DATE_ADD(%s, INTERVAL 1 DAY)",
             ]
             params: list[Any] = [sensor_id, start, end]
+            if latest_before is not None:
+                clauses.append("d.fecha <= %s")
+                params.append(latest_before)
             if cursor_value:
                 cursor_date, cursor_id = cursor_value
                 clauses.append(
@@ -620,6 +662,19 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
                 if value.strip()
             ))
             limit = min(max(int(request.args.get("limite", 25)), 1), 100)
+            start = (
+                _parse_date(request.args.get("fecha_inicio"), "fecha_inicio")
+                if request.args.get("fecha_inicio")
+                else date(1970, 1, 1)
+            )
+            end = (
+                _parse_date(request.args.get("fecha_fin"), "fecha_fin")
+                if request.args.get("fecha_fin")
+                else date.today()
+            )
+            if start > end:
+                raise ValueError("fecha_inicio no puede ser posterior a fecha_fin")
+            preview_cursor = _decode_preview_cursor(request.args.get("cursor"))
         except ValueError:
             return jsonify({"status": "fail", "error": "parámetros inválidos"}), 400
         if not device_ids:
@@ -631,30 +686,44 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         try:
             connection = connect()
             candidates: list[dict[str, Any]] = []
+            latest_before = (
+                datetime.fromisoformat(preview_cursor[0])
+                if preview_cursor
+                else None
+            )
             for device_id in device_ids:
                 device, sensor_ids = get_device(connection, device_id)
                 streams = [
                     iter_sensor_rows(
                         connection,
                         sensor_id,
-                        date(1970, 1, 1),
-                        date.today(),
+                        start,
+                        end,
                         page_size=500,
+                        latest_before=latest_before,
                     )
                     for sensor_id in sensor_ids
                 ]
-                candidates.extend(itertools.islice(
-                    _merge_wide_rows(streams, device),
-                    limit,
-                ))
+                rows: Iterator[dict[str, Any]] = _merge_wide_rows(streams, device)
+                if preview_cursor:
+                    unfiltered_rows = rows
+                    rows = (
+                        row for row in unfiltered_rows
+                        if _preview_row_key(row) < preview_cursor
+                    )
+                candidates.extend(itertools.islice(rows, limit + 1))
 
-            candidates.sort(
-                key=lambda row: (row["fecha"], row["codigo_interno"]),
-                reverse=True,
-            )
+            candidates.sort(key=_preview_row_key, reverse=True)
+            if preview_cursor:
+                candidates = [
+                    row for row in candidates
+                    if _preview_row_key(row) < preview_cursor
+                ]
+            has_more = len(candidates) > limit
+            page_rows = candidates[:limit]
             table_data = [
                 {key: _serialize(value) for key, value in row.items()}
-                for row in candidates[:limit]
+                for row in page_rows
             ]
             return jsonify({
                 "status": "success",
@@ -662,6 +731,17 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
                     "tableData": table_data,
                     "totalCount": len(table_data),
                     "preview": True,
+                    "has_more": has_more,
+                    "next_cursor": (
+                        _encode_preview_cursor(page_rows[-1])
+                        if has_more and page_rows
+                        else None
+                    ),
+                    "page_size": limit,
+                    "range": {
+                        "fecha_inicio": start.isoformat(),
+                        "fecha_fin": end.isoformat(),
+                    },
                 },
             })
         except LookupError as error:

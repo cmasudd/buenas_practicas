@@ -49,8 +49,10 @@ export const DataPage = () => {
 
   // Paginación
   const [currentPage, setCurrentPage] = useState(1); // Página actual
-  const [totalPages, setTotalPages] = useState(0);
   const rowsPerPage = 25; // Número máximo de filas por página
+  const [cursorStack, setCursorStack] = useState([null]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
   const [sortOrder, setSortOrder] = useState("desc")
 
   // Hooks para obtener datos de las tablas
@@ -109,7 +111,12 @@ export const DataPage = () => {
     return () => window.clearTimeout(refreshTimer);
   }, [selectedProjects, selectedDevices, startDate, endDate, currentPage, refreshCount]);
   const handleRefresh = () => {
-    forceSensorsFetch();
+    setCursorStack([null]);
+    if (currentPage === 1) {
+      forceSensorsFetch();
+    } else {
+      setCurrentPage(1);
+    }
   };
   // Actualiza la peticion de datos dependiendo de dispositivos y proyectos seleccionados
   const refleshTableData = async () => {
@@ -123,7 +130,15 @@ export const DataPage = () => {
       devicesSetUrl(`${import.meta.env.VITE_API_URL}/listarDatos?tabla=${devicesTableName}&id_proyecto=${projectIds}`);
 
       if (selectedDevices.length > 0) {
-        const previewUrl = `${import.meta.env.VITE_API_URL}/v3/vista-previa?id_dispositivo=${deviceIds}&limite=${rowsPerPage}`;
+        const previewParams = new URLSearchParams({
+          id_dispositivo: deviceIds,
+          limite: String(rowsPerPage),
+        });
+        if (startDate) previewParams.set('fecha_inicio', startDate);
+        if (endDate) previewParams.set('fecha_fin', endDate);
+        const currentCursor = cursorStack[currentPage - 1];
+        if (currentCursor) previewParams.set('cursor', currentCursor);
+        const previewUrl = `${import.meta.env.VITE_API_URL}/v3/vista-previa?${previewParams.toString()}`;
         console.log('refleshTableData preview:', { previewUrl, deviceCodes });
         sensorsSetUrl(previewUrl);
         setIsLoading(false);
@@ -140,11 +155,12 @@ export const DataPage = () => {
     console.log('sensorsData', sensorsData);
     if (sensorsData && sensorsData.status === 'success') {
       setTableData(sensorsData.data.tableData);
-      let totalCount = sensorsData.data.totalCount || 0;
-      setTotalPages(Math.ceil(totalCount / rowsPerPage));
+      setHasMore(Boolean(sensorsData.data.has_more));
+      setNextCursor(sensorsData.data.next_cursor || null);
     } else {
       setTableData([]);
-      setTotalPages(0);
+      setHasMore(false);
+      setNextCursor(null);
     }
   }, [sensorsData]);
 
@@ -157,16 +173,28 @@ export const DataPage = () => {
     setSelectedProjects(selectedProjects || []); // Permite deseleccionar todo
     setSelectedDevices([]); // Restablece los dispositivos seleccionados
     setCurrentPage(1);
+    setCursorStack([null]);
   };
 
   const handleDeviceChange = (selectedDevices) => {
     console.log('selectedDevices', selectedDevices);
     setSelectedDevices(selectedDevices || []); // Permite deseleccionar todo
     setCurrentPage(1);
+    setCursorStack([null]);
   };
 
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
+  const handleOlderData = () => {
+    if (!hasMore || !nextCursor) return;
+    setCursorStack((previous) => [
+      ...previous.slice(0, currentPage),
+      nextCursor,
+    ]);
+    setCurrentPage((page) => page + 1);
+  };
+
+  const handleRecentData = () => {
+    if (currentPage <= 1) return;
+    setCurrentPage((page) => page - 1);
   };
 
   const handleStartDateChange = (event) => {
@@ -175,11 +203,13 @@ export const DataPage = () => {
       setEndDate(new Date().toLocaleDateString('en-CA'));
     }
     setCurrentPage(1); // Resetear a la primera página
+    setCursorStack([null]);
   };
 
   const handleEndDateChange = (event) => {
     setEndDate(event.target.value);
     setCurrentPage(1); // Resetear a la primera página
+    setCursorStack([null]);
   };
 
   const customStyles = {
@@ -351,7 +381,10 @@ export const DataPage = () => {
                 </div>
                 {selectedDevices.length > 0 && (
                   <p className="text-muted text-center">
-                    La tabla muestra las 25 mediciones más recientes. Las fechas se aplican a la descarga CSV.
+                    {startDate || endDate
+                      ? 'La tabla muestra el rango seleccionado en páginas de 25 mediciones.'
+                      : 'La tabla muestra las mediciones más recientes en páginas de 25.'}
+                    {' '}La descarga CSV incluye el rango completo.
                   </p>
                 )}
                 <div className="row d-flex justify-content-around my-2 py-4">
@@ -484,66 +517,28 @@ export const DataPage = () => {
                   )}
                 </div>
 
-                {selectedProjects.length > 0 && tableData.length > 0 && (<div className="pagination">
-                  {Array.from({ length: totalPages }, (_, index) => {
-                    const pageNumber = index + 1;
-
-                    // Siempre muestra la primera página
-                    if (pageNumber === 1) {
-                      return (
-                        <button
-                          key={index}
-                          onClick={() => handlePageChange(pageNumber)}
-                          className={`btn ${currentPage === pageNumber ? 'btn-dark' : 'btn-secondary'} m-1`}
-                        >
-                          {pageNumber}
-                        </button>
-                      );
-                    }
-
-                    // Siempre muestra la última página
-                    if (pageNumber === totalPages) {
-                      return (
-                        <button
-                          key={index}
-                          onClick={() => handlePageChange(pageNumber)}
-                          className={`btn ${currentPage === pageNumber ? 'btn-dark' : 'btn-secondary'} m-1`}
-                        >
-                          {pageNumber}
-                        </button>
-                      );
-                    }
-
-                    if (
-                      (pageNumber >= currentPage - 4 && // Desde 4 páginas antes de la actual
-                        pageNumber <= currentPage + 4) ||
-                      (currentPage < 7 && pageNumber < 10)
-                    ) {
-                      return (
-                        <button
-                          key={index}
-                          onClick={() => handlePageChange(pageNumber)}
-                          className={`btn ${currentPage === pageNumber ? 'btn-dark' : 'btn-secondary'} m-1`}
-                        >
-                          {pageNumber}
-                        </button>
-                      );
-                    }
-
-                    // Mostrar puntos suspensivos cuando haya saltos entre páginas
-                    if (
-                      (pageNumber === 2 && currentPage > 6) ||
-                      (pageNumber === totalPages - 1 && currentPage < totalPages - 5)
-                    ) {
-                      return (
-                        <span key={index} className="btn disabled m-1">
-                          ...
-                        </span>
-                      );
-                    }
-                    return null;
-                  })}
-                </div>)}
+                {selectedProjects.length > 0 && tableData.length > 0 && (
+                  <div className="pagination d-flex align-items-center justify-content-center">
+                    <button
+                      onClick={handleRecentData}
+                      disabled={currentPage === 1 || isLoadingSensors}
+                      className="btn btn-secondary m-1"
+                    >
+                      Datos más recientes
+                    </button>
+                    <span className="m-2">Página {currentPage}</span>
+                    <button
+                      onClick={handleOlderData}
+                      disabled={!hasMore || !nextCursor || isLoadingSensors}
+                      className="btn btn-secondary m-1"
+                    >
+                      Datos anteriores
+                    </button>
+                    {hasMore && (
+                      <span className="text-muted m-2">Hay más datos disponibles</span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {!(visitorLoggedIn || username) && (

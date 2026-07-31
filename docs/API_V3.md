@@ -77,6 +77,19 @@ reciben HTTP 429 con `Retry-After: 30`.
 GET /v3/vista-previa?id_dispositivo=92&limite=25
 ```
 
+También acepta `fecha_inicio`, `fecha_fin` y el `cursor` opaco entregado por la
+página anterior:
+
+```http
+GET /v3/vista-previa?id_dispositivo=92&limite=25
+    &fecha_inicio=2026-05-01&fecha_fin=2026-05-31
+    &cursor=CURSOR_OPCIONAL
+```
+
+La respuesta incluye `has_more`, `next_cursor`, `page_size` y el rango efectivo.
+El cliente muestra “Hay más datos disponibles” cuando `has_more` es verdadero;
+no se calcula un total exacto sobre la tabla histórica.
+
 Devuelve las mediciones estructuradas más recientes con la misma forma ancha de
 la web. Recorre cada sensor en orden descendente mediante
 `idx_datos_sensor_fecha` y no ejecuta el JOIN legacy sobre todo el histórico.

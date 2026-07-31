@@ -57,9 +57,11 @@ Solo se permite una exportación CSV activa. Una segunda solicitud espera hasta
 30 segundos y, si el turno sigue ocupado, recibe HTTP 429 con `Retry-After: 30`.
 Esto es un cortacircuito seguro, no una cola persistente de trabajos.
 
-La tabla del portal muestra mediante V3 las 25 mediciones estructuradas más
-recientes, sin recorrer todo el histórico. La descarga CSV usa el rango completo
-seleccionado. Los cambios de filtros se
+La tabla del portal muestra mediante V3 páginas de 25 mediciones estructuradas,
+sin recorrer todo el histórico. Sin fechas comienza por las más recientes; con
+fechas navega solamente dentro del rango seleccionado. `has_more` indica si hay
+otra página y `next_cursor` permite avanzar sin ejecutar `COUNT(*)` ni usar
+`OFFSET`. La descarga CSV usa el rango completo seleccionado. Los cambios de filtros se
 agrupan durante 500 ms y las solicitudes HTTP reemplazadas se abortan para
 evitar duplicados mientras el usuario completa el formulario.
 

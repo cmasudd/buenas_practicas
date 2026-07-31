@@ -11,7 +11,9 @@ from flask import Flask
 from historico_v3 import (
     create_historico_v3_blueprint,
     _decode_cursor,
+    _decode_preview_cursor,
     _encode_cursor,
+    _encode_preview_cursor,
     _parse_date,
     _merge_wide_rows,
     _serialize,
@@ -29,6 +31,27 @@ class CursorTests(unittest.TestCase):
     def test_invalid_cursor(self):
         with self.assertRaises(ValueError):
             _decode_cursor("no-es-un-cursor")
+
+    def test_preview_cursor_round_trip(self):
+        row = {
+            "fecha": datetime(2026, 5, 6, 15, 42, 53),
+            "codigo_interno": "HIRI-01",
+            "fecha_insercion": datetime(2026, 5, 6, 15, 42, 54),
+            "id_sesion": "Sin sesión",
+            "id_dato_concatenado": "11, 10",
+        }
+        cursor = _encode_preview_cursor(row)
+        self.assertEqual(_decode_preview_cursor(cursor), (
+            "2026-05-06T15:42:53",
+            "HIRI-01",
+            "2026-05-06T15:42:54",
+            "Sin sesión",
+            "11, 10",
+        ))
+
+    def test_invalid_preview_cursor(self):
+        with self.assertRaises(ValueError):
+            _decode_preview_cursor("no-es-un-cursor")
 
     def test_dates(self):
         self.assertEqual(_parse_date("2026-07-27", "fecha").isoformat(), "2026-07-27")
