@@ -25,6 +25,7 @@ repositorio:
 HISTORICO_SESSION_SECRET=secreto-aleatorio-largo
 HISTORICO_USER=usuario
 HISTORICO_PASSWORD_HASH=hash-generado-por-werkzeug
+HISTORICO_MICROSOFT_CLIENT_ID=id-publico-de-la-aplicacion-msal
 ```
 
 Para el portal React se incluyen ejemplos en `frontend/`. Las solicitudes de

@@ -69,6 +69,12 @@ vigencia de ocho horas. La clave de firma, usuario y hash de contraseña se leen
 desde `HISTORICO_SESSION_SECRET`, `HISTORICO_USER` y
 `HISTORICO_PASSWORD_HASH`; nunca deben subirse al repositorio.
 
+Los usuarios Microsoft del portal intercambian su ID token mediante
+`POST /v3/auth/microsoft`. El backend valida firma RS256 con las claves JWKS de
+Microsoft, audiencia, vencimiento, tenant y emisor antes de crear la misma
+sesión HTTP-only. El identificador público de la aplicación se configura en
+`HISTORICO_MICROSOFT_CLIENT_ID`.
+
 ## Decisiones de seguridad operativa
 
 - Fechas obligatorias.

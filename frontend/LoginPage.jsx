@@ -42,6 +42,28 @@ const LoginPage = () => {
         });
     }, []);
 
+    useEffect(() => {
+        if (!isAuthenticated || msalInProgress !== InteractionType.None) return;
+
+        const account = msalAccounts[0];
+        msalInstance.acquireTokenSilent({
+            scopes: config.scopeBase,
+            account,
+        }).then((tokenResult) => fetch(
+            `${import.meta.env.VITE_API_URL}/v3/auth/microsoft`,
+            {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id_token: tokenResult.idToken }),
+            },
+        )).then((response) => {
+            if (!response.ok) throw new Error("No se pudo habilitar la descarga");
+        }).catch((error) => {
+            console.error("No fue posible sincronizar la sesión Microsoft", error);
+        });
+    }, [isAuthenticated, msalInProgress, msalAccounts, msalInstance]);
+
     const handleLogin = () => {
         const loginRequest = {
             scopes: config.scopeBase,
@@ -70,18 +92,17 @@ const LoginPage = () => {
     };
 
     const handleLogout = async () => {
-    
+        await fetch(`${import.meta.env.VITE_API_URL}/v3/auth/logout`, {
+            method: "POST",
+            credentials: "include",
+        });
+        localStorage.removeItem("visitorLoggedIn");
+        setVisitorLoggedIn(false);
+
         if(isAuthenticated){
             msalInstance.logoutRedirect();
-        }else{
-            await fetch(`${import.meta.env.VITE_API_URL}/v3/auth/logout`, {
-                method: "POST",
-                credentials: "include",
-            });
-            localStorage.removeItem("visitorLoggedIn");
-            setVisitorLoggedIn(false);
+            return;
         }
-    
         window.location.reload();
     };
 

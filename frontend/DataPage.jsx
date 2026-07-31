@@ -9,6 +9,7 @@ import noVariables from '../helpers/noVariables.json';
 import AlertsCreator from '../components/AlertsCreator';
 import Otro from '../Otro';
 import AlertsList from '../components/AlertsList';
+import * as config from '../helpers/config';
 
 // 2025-06-23T21:33:25
 
@@ -16,7 +17,7 @@ import AlertsList from '../components/AlertsList';
 
 export const DataPage = () => {
   // login
-  const { accounts } = useMsal();
+  const { accounts, instance } = useMsal();
   const username = accounts.length > 0;
   const visitorLoggedIn = localStorage.getItem("visitorLoggedIn") === "true";
 
@@ -89,7 +90,7 @@ export const DataPage = () => {
     }
   }, [devicesData]);
   useEffect(() => {
-    refleshTableData();
+    const refreshTimer = window.setTimeout(refleshTableData, 500);
     const desc = projectsData?.data?.tableData?.filter(proj => proj?.id_proyecto === selectedProjects[0]?.value);
     const handleSetDesc = () => {
       if (desc && desc.length > 0) {
@@ -100,6 +101,7 @@ export const DataPage = () => {
     // console.log(projectsData.data.tableData);
     // console.log(selectedProjects[0]?.value);
 
+    return () => window.clearTimeout(refreshTimer);
   }, [selectedProjects, selectedDevices, startDate, endDate, currentPage, refreshCount]);
   const handleRefresh = () => {
     setRefreshCount(c => c + 1);
@@ -119,7 +121,13 @@ export const DataPage = () => {
       // let url = `${import.meta.env.VITE_API_URL}/listarDatosEstructuradosV2?tabla=datos&disp.id_proyecto=${projectIds}&limite=${rowsPerPage}&offset=${(currentPage - 1) * rowsPerPage}&${refreshParam}`;
       let url = `${import.meta.env.VITE_API_URL}/listarDatosEstructuradosV2?tabla=datos&order_by=fecha_insercion&disp.id_proyecto=${projectIds}&limite=${rowsPerPage}&offset=${(currentPage - 1) * rowsPerPage}`;
 
-      if (selectedDevices.length > 0) {
+      const rangeDays = startDate && endDate
+        ? Math.floor((new Date(endDate) - new Date(startDate)) / 86400000) + 1
+        : 0;
+
+      // La tabla legacy es solo una vista previa. Los rangos históricos largos
+      // se descargan por V3 sin lanzar el JOIN pesado de V2.
+      if (selectedDevices.length > 0 && startDate && endDate && rangeDays <= 31) {
         url += `&disp.codigo_interno=${deviceIds}`;
         if (startDate) url += `&fecha_inicio=${startDate}`;
         if (endDate) url += `&fecha_fin=${endDate}`;
@@ -172,6 +180,9 @@ export const DataPage = () => {
 
   const handleStartDateChange = (event) => {
     setStartDate(event.target.value);
+    if (event.target.value && !endDate) {
+      setEndDate(new Date().toLocaleDateString('en-CA'));
+    }
     setCurrentPage(1); // Resetear a la primera página
   };
 
@@ -229,6 +240,31 @@ export const DataPage = () => {
         return;
       }
 
+      if (startDate && endDate && startDate > endDate) {
+        alert('La fecha de inicio no puede ser posterior a la fecha de fin.');
+        return;
+      }
+
+      let authStatus = await fetch(`${import.meta.env.VITE_API_URL}/v3/auth/status`, {
+        credentials: 'include',
+      });
+      if (!authStatus.ok && accounts.length > 0) {
+        const tokenResult = await instance.acquireTokenSilent({
+          scopes: config.scopeBase,
+          account: accounts[0],
+        });
+        authStatus = await fetch(`${import.meta.env.VITE_API_URL}/v3/auth/microsoft`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id_token: tokenResult.idToken }),
+        });
+      }
+      if (!authStatus.ok) {
+        alert('Su sesión no permite descargar. Cierre sesión y vuelva a ingresar.');
+        return;
+      }
+
       let url = `${import.meta.env.VITE_API_URL}/v3/historicos.csv?id_dispositivo=${deviceIds}`;
 
       // Añadir los filtros de fechas si se han especificado
@@ -242,6 +278,7 @@ export const DataPage = () => {
       document.body.removeChild(link);
     } catch (error) {
       console.error('Error al descargar el archivo:', error);
+      alert('No fue posible iniciar la descarga. Actualice la página e intente nuevamente.');
     }
   };
   const downloadExcel = async () => {
@@ -321,6 +358,12 @@ export const DataPage = () => {
                     />
                   </div>
                 </div>
+                {startDate && endDate &&
+                  (Math.floor((new Date(endDate) - new Date(startDate)) / 86400000) + 1 > 31) && (
+                    <p className="text-muted text-center">
+                      La vista previa se limita a 31 días. El CSV descargará el rango completo seleccionado.
+                    </p>
+                )}
                 <div className="row d-flex justify-content-around my-2 py-4">
                   <div className="dropdown mb-4 col-3">
                     <label>Proyectos</label>
@@ -350,6 +393,18 @@ export const DataPage = () => {
                   </div>
                 </div>
 
+                {selectedDevices.length > 0 && (
+                  <div className="row d-flex justify-content-center my-2">
+                    <button className="btn m-1 custom-button" onClick={downloadFile}>
+                      <span className="btn-text">Descargar CSV histórico</span>
+                      <i className="fas fa-download ms-2" aria-hidden="true"></i>
+                    </button>
+                    <button className="btn m-1 custom-button" onClick={downloadExcel}>
+                      <span className="btn-text">Descargar Excel</span>
+                      <i className="fas fa-download ms-2" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                )}
 
                 <div className='row d-flex justify-content-around my-2'>
                   {selectedProjects.length > 0 && tableData.length > 0 && (
@@ -364,14 +419,6 @@ export const DataPage = () => {
                         <button className="btn m-1 ml-auto custom-button" onClick={() => setShowAlerts(!showAlerts)}>
                           <span className="btn-text">{showAlerts ? "Ocultar" : "Mostrar"} Alertas</span>
                           <i className="fas fa-eye me-2" aria-hidden="true"></i>
-                        </button>
-                        <button className="btn m-1 ml-auto custom-button" onClick={downloadFile}>
-                          <span className="btn-text">Descargar CSV</span>
-                          <i className="fas fa-plus-circle"></i>
-                        </button>
-                        <button className="btn m-1 ml-auto custom-button" onClick={downloadExcel}>
-                          <span className="btn-text">Descargar Excel</span>
-                          <i className="fas fa-plus-circle"></i>
                         </button>
                         <button className="btn m-1 ml-auto custom-button"
                           // onClick={async () => { await refleshTableData(); }}>

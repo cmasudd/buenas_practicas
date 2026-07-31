@@ -18,11 +18,15 @@ import json
 import os
 import secrets
 import time
+import uuid
 from datetime import date, datetime
 from typing import Any, Iterator
 
 import decimal
 import mysql.connector
+import jwt
+from jwt import PyJWKClient
+from jwt.exceptions import PyJWTError
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash
 from flask import (
@@ -40,6 +44,10 @@ MAX_PAGE_SIZE = 1000
 SESSION_COOKIE = "historico_session"
 SESSION_MAX_AGE = 8 * 60 * 60
 EXPORT_LOCK_PATH = "/tmp/api-sensores-historico.lock"
+MICROSOFT_JWKS_URL = (
+    "https://login.microsoftonline.com/common/discovery/v2.0/keys"
+)
+DEFAULT_MICROSOFT_CLIENT_ID = "8e94a7e7-a878-4e6d-9021-8231737ebec5"
 
 
 def _encode_cursor(id_sensor: int, fecha: datetime | str, id_dato: int) -> str:
@@ -83,8 +91,31 @@ def _serialize(value: Any) -> Any:
     return str(value)
 
 
+def _validate_microsoft_issuer(claims: dict[str, Any]) -> None:
+    """Valida que el emisor corresponda exactamente al tenant del token."""
+    tenant_id = str(claims.get("tid", ""))
+    try:
+        uuid.UUID(tenant_id)
+    except ValueError as error:
+        raise ValueError("tenant de Microsoft inválido") from error
+
+    version = str(claims.get("ver", "2.0"))
+    expected = (
+        f"https://sts.windows.net/{tenant_id}/"
+        if version == "1.0"
+        else f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+    )
+    if not secrets.compare_digest(str(claims.get("iss", "")), expected):
+        raise ValueError("emisor de Microsoft inválido")
+
+
 def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
     blueprint = Blueprint("historico_v3", __name__, url_prefix="/v3")
+    microsoft_jwks = PyJWKClient(
+        MICROSOFT_JWKS_URL,
+        lifespan=24 * 60 * 60,
+        timeout=5,
+    )
 
     def connect():
         connection = mysql.connector.connect(**db_config)
@@ -117,6 +148,24 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             401,
         )
 
+    def session_response(username: str, provider: str = "local") -> Response:
+        token = serializer().dumps({"sub": username, "provider": provider})
+        response = jsonify({
+            "status": "success",
+            "user": username,
+            "provider": provider,
+        })
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            max_age=SESSION_MAX_AGE,
+            secure=True,
+            httponly=True,
+            samesite="Strict",
+            path="/v3",
+        )
+        return response
+
     @blueprint.post("/auth/login")
     def login():
         payload = request.get_json(silent=True) or {}
@@ -133,18 +182,42 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         if not valid:
             return jsonify({"status": "fail", "error": "credenciales inválidas"}), 401
 
-        token = serializer().dumps({"sub": username})
-        response = jsonify({"status": "success", "user": username})
-        response.set_cookie(
-            SESSION_COOKIE,
-            token,
-            max_age=SESSION_MAX_AGE,
-            secure=True,
-            httponly=True,
-            samesite="Strict",
-            path="/v3",
+        return session_response(username)
+
+    @blueprint.post("/auth/microsoft")
+    def microsoft_login():
+        payload = request.get_json(silent=True) or {}
+        id_token = str(payload.get("id_token", ""))
+        client_id = os.getenv(
+            "HISTORICO_MICROSOFT_CLIENT_ID",
+            DEFAULT_MICROSOFT_CLIENT_ID,
         )
-        return response
+        if not client_id or not id_token or len(id_token) > 16_384:
+            return jsonify({"status": "fail", "error": "token inválido"}), 401
+
+        try:
+            signing_key = microsoft_jwks.get_signing_key_from_jwt(id_token)
+            claims = jwt.decode(
+                id_token,
+                signing_key.key,
+                algorithms=["RS256"],
+                audience=client_id,
+                options={
+                    "require": ["aud", "exp", "iat", "iss", "sub", "tid"],
+                },
+            )
+            _validate_microsoft_issuer(claims)
+        except (PyJWTError, ValueError, OSError):
+            current_app.logger.warning("Token Microsoft inválido para históricos")
+            return jsonify({"status": "fail", "error": "token inválido"}), 401
+
+        username = str(
+            claims.get("preferred_username")
+            or claims.get("email")
+            or claims.get("name")
+            or claims["sub"]
+        )
+        return session_response(username, provider="microsoft")
 
     @blueprint.get("/auth/status")
     def auth_status():
@@ -544,4 +617,5 @@ __all__ = [
     "_decode_cursor",
     "_encode_cursor",
     "_parse_date",
+    "_validate_microsoft_issuer",
 ]

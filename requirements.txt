@@ -1,2 +1,2 @@
 requests>=2.31,<3
-
+PyJWT[crypto]>=2.13,<3
