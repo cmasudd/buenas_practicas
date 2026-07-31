@@ -65,6 +65,10 @@ otra página y `next_cursor` permite avanzar sin ejecutar `COUNT(*)` ni usar
 agrupan durante 500 ms y las solicitudes HTTP reemplazadas se abortan para
 evitar duplicados mientras el usuario completa el formulario.
 
+Un calendario mensual marca los días que contienen al menos una medición para
+los dispositivos seleccionados. La comprobación usa el índice por sensor y
+fecha y no ejecuta conteos sobre el histórico.
+
 ## Índices comprobados en producción
 
 La implementación aprovecha los índices existentes:

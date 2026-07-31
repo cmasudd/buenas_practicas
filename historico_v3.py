@@ -11,6 +11,7 @@ Este módulo no reemplaza rutas legacy. Se registra con un prefijo /v3 y usa:
 from __future__ import annotations
 
 import base64
+import calendar
 import csv
 import fcntl
 import heapq
@@ -22,7 +23,7 @@ import re
 import secrets
 import time
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Iterator
 
 import decimal
@@ -748,6 +749,95 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             return jsonify({"status": "fail", "error": str(error)}), 404
         except mysql.connector.Error:
             current_app.logger.exception("Error de MariaDB en vista previa V3")
+            return jsonify({
+                "status": "fail",
+                "error": "error consultando la base de datos",
+            }), 503
+        finally:
+            if connection is not None and connection.is_connected():
+                connection.close()
+
+    @blueprint.get("/disponibilidad")
+    def measurement_availability():
+        """Indica qué días de un mes tienen datos sin contar sus registros."""
+        raw_device_ids = request.args.get("id_dispositivo", "")
+        month_value = request.args.get("mes", "")
+        try:
+            device_ids = list(dict.fromkeys(
+                int(value.strip())
+                for value in raw_device_ids.split(",")
+                if value.strip()
+            ))
+            month_start = datetime.strptime(month_value, "%Y-%m").date()
+        except ValueError:
+            return jsonify({
+                "status": "fail",
+                "error": "id_dispositivo o mes inválido",
+            }), 400
+        if not device_ids:
+            return jsonify({
+                "status": "fail",
+                "error": "id_dispositivo es obligatorio",
+            }), 400
+        if len(device_ids) > 10:
+            return jsonify({
+                "status": "fail",
+                "error": "máximo 10 dispositivos",
+            }), 400
+
+        connection = None
+        try:
+            connection = connect()
+            sensor_ids: list[int] = []
+            for device_id in device_ids:
+                _, device_sensor_ids = get_device(connection, device_id)
+                sensor_ids.extend(device_sensor_ids)
+            sensor_ids = list(dict.fromkeys(sensor_ids))
+            placeholders = ", ".join(["%s"] * len(sensor_ids))
+
+            days_with_data: list[str] = []
+            cursor = connection.cursor()
+            try:
+                days_in_month = calendar.monthrange(
+                    month_start.year,
+                    month_start.month,
+                )[1]
+                for day_number in range(days_in_month):
+                    day_start = month_start + timedelta(days=day_number)
+                    day_end = day_start + timedelta(days=1)
+                    cursor.execute(
+                        f"""
+                        SELECT 1
+                        FROM sensores_dev.datos AS d
+                        FORCE INDEX (idx_datos_sensor_fecha)
+                        WHERE d.id_sensor IN ({placeholders})
+                          AND d.fecha >= %s
+                          AND d.fecha < %s
+                        LIMIT 1
+                        """,
+                        [*sensor_ids, day_start, day_end],
+                    )
+                    if cursor.fetchone() is not None:
+                        days_with_data.append(day_start.isoformat())
+            finally:
+                cursor.close()
+
+            response = jsonify({
+                "status": "success",
+                "data": {
+                    "month": month_start.strftime("%Y-%m"),
+                    "days": days_with_data,
+                    "device_ids": device_ids,
+                },
+            })
+            response.headers["Cache-Control"] = "private, max-age=60"
+            return response
+        except LookupError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 404
+        except mysql.connector.Error:
+            current_app.logger.exception(
+                "Error de MariaDB consultando disponibilidad V3"
+            )
             return jsonify({
                 "status": "fail",
                 "error": "error consultando la base de datos",

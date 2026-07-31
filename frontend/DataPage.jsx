@@ -35,6 +35,9 @@ export const DataPage = () => {
   const [selectedDevices, setSelectedDevices] = useState([]); // Array para selección múltiple
   const [startDate, setStartDate] = useState(''); // Fecha de inicio
   const [endDate, setEndDate] = useState(''); // Fecha de fin
+  const [availabilityMonth, setAvailabilityMonth] = useState(
+    new Date().toLocaleDateString('en-CA').slice(0, 7)
+  );
 
   // Graficos
   const [showChart, setShowChart] = useState(false);
@@ -63,6 +66,11 @@ export const DataPage = () => {
     setUrl: sensorsSetUrl,
     isLoading: isLoadingSensors,
     forceFetch: forceSensorsFetch,
+  } = useFetch('');
+  const {
+    data: availabilityData,
+    setUrl: availabilitySetUrl,
+    isLoading: isLoadingAvailability,
   } = useFetch('');
 
   // actualizacion de datos
@@ -96,6 +104,21 @@ export const DataPage = () => {
       setIsLoading(false);
     }
   }, [devicesData]);
+
+  useEffect(() => {
+    if (selectedDevices.length === 0 || !availabilityMonth) {
+      availabilitySetUrl('');
+      return;
+    }
+    const params = new URLSearchParams({
+      id_dispositivo: selectedDevices.map((device) => device.value).join(','),
+      mes: availabilityMonth,
+    });
+    availabilitySetUrl(
+      `${import.meta.env.VITE_API_URL}/v3/disponibilidad?${params.toString()}`
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDevices, availabilityMonth]);
   useEffect(() => {
     const refreshTimer = window.setTimeout(refleshTableData, 500);
     const desc = projectsData?.data?.tableData?.filter(proj => proj?.id_proyecto === selectedProjects[0]?.value);
@@ -199,6 +222,9 @@ export const DataPage = () => {
 
   const handleStartDateChange = (event) => {
     setStartDate(event.target.value);
+    if (event.target.value) {
+      setAvailabilityMonth(event.target.value.slice(0, 7));
+    }
     if (event.target.value && !endDate) {
       setEndDate(new Date().toLocaleDateString('en-CA'));
     }
@@ -208,9 +234,36 @@ export const DataPage = () => {
 
   const handleEndDateChange = (event) => {
     setEndDate(event.target.value);
+    if (event.target.value) {
+      setAvailabilityMonth(event.target.value.slice(0, 7));
+    }
     setCurrentPage(1); // Resetear a la primera página
     setCursorStack([null]);
   };
+
+  const handleAvailableDayClick = (day) => {
+    setStartDate(day);
+    setEndDate(day);
+    setCurrentPage(1);
+    setCursorStack([null]);
+  };
+
+  const availabilityDays = new Set(
+    availabilityData?.status === 'success'
+      ? availabilityData.data.days
+      : []
+  );
+  const [calendarYear, calendarMonth] = availabilityMonth
+    .split('-')
+    .map(Number);
+  const calendarDayCount = new Date(calendarYear, calendarMonth, 0).getDate();
+  const calendarStartOffset = (
+    new Date(calendarYear, calendarMonth - 1, 1).getDay() + 6
+  ) % 7;
+  const calendarCells = [
+    ...Array(calendarStartOffset).fill(null),
+    ...Array.from({ length: calendarDayCount }, (_, index) => index + 1),
+  ];
 
   const customStyles = {
     control: (provided, state) => ({
@@ -379,6 +432,74 @@ export const DataPage = () => {
                     />
                   </div>
                 </div>
+                {selectedDevices.length > 0 && (
+                  <div className="mb-4 px-3">
+                    <div className="d-flex justify-content-center align-items-end mb-2">
+                      <div>
+                        <label htmlFor="availability-month">
+                          Días que contienen datos
+                        </label>
+                        <input
+                          type="month"
+                          id="availability-month"
+                          value={availabilityMonth}
+                          onChange={(event) => {
+                            if (event.target.value) {
+                              setAvailabilityMonth(event.target.value);
+                            }
+                          }}
+                          className="form-control mt-1"
+                        />
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(7, minmax(36px, 1fr))',
+                        gap: '0.25rem',
+                        maxWidth: '560px',
+                        margin: '0 auto',
+                      }}
+                    >
+                      {['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá', 'Do'].map((day) => (
+                        <strong className="text-center" key={day}>{day}</strong>
+                      ))}
+                      {calendarCells.map((day, index) => {
+                        if (day === null) {
+                          return <span key={`empty-${index}`} />;
+                        }
+                        const dateValue = `${availabilityMonth}-${String(day).padStart(2, '0')}`;
+                        const hasData = availabilityDays.has(dateValue);
+                        const isSelected = dateValue === startDate || dateValue === endDate;
+                        return (
+                          <button
+                            type="button"
+                            key={dateValue}
+                            disabled={!hasData}
+                            onClick={() => handleAvailableDayClick(dateValue)}
+                            className={`btn btn-sm ${
+                              isSelected
+                                ? 'btn-dark'
+                                : hasData
+                                  ? 'btn-success'
+                                  : 'btn-light text-muted'
+                            }`}
+                            title={hasData ? 'Este día contiene datos' : 'Sin datos'}
+                          >
+                            {day}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-muted text-center mt-2 mb-0">
+                      {isLoadingAvailability
+                        ? 'Buscando días con datos…'
+                        : availabilityDays.size > 0
+                          ? 'Los días verdes contienen datos. Seleccione uno para visualizarlo.'
+                          : 'No se encontraron datos para este mes.'}
+                    </p>
+                  </div>
+                )}
                 {selectedDevices.length > 0 && (
                   <p className="text-muted text-center">
                     {startDate || endDate

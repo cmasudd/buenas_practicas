@@ -95,6 +95,18 @@ la web. Recorre cada sensor en orden descendente mediante
 `idx_datos_sensor_fecha` y no ejecuta el JOIN legacy sobre todo el histórico.
 Acepta hasta 10 dispositivos y un máximo de 100 filas.
 
+## Disponibilidad mensual
+
+```http
+GET /v3/disponibilidad?id_dispositivo=7&mes=2026-05
+```
+
+Devuelve las fechas del mes que contienen al menos una medición para los
+dispositivos seleccionados. Acepta hasta 10 dispositivos y no cuenta ni
+descarga sus registros. Realiza como máximo 31 comprobaciones acotadas usando
+`idx_datos_sensor_fecha`; el portal utiliza la respuesta para marcar en verde
+los días disponibles.
+
 ## Sesión temporal
 
 ```http
