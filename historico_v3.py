@@ -846,6 +846,101 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             if connection is not None and connection.is_connected():
                 connection.close()
 
+    @blueprint.get("/disponibilidad-meses")
+    def monthly_measurement_availability():
+        """Indica qué meses de un año tienen al menos una medición."""
+        raw_device_ids = request.args.get("id_dispositivo", "")
+        try:
+            device_ids = list(dict.fromkeys(
+                int(value.strip())
+                for value in raw_device_ids.split(",")
+                if value.strip()
+            ))
+            year = int(request.args.get("anio", ""))
+        except ValueError:
+            return jsonify({
+                "status": "fail",
+                "error": "id_dispositivo o año inválido",
+            }), 400
+        if not device_ids:
+            return jsonify({
+                "status": "fail",
+                "error": "id_dispositivo es obligatorio",
+            }), 400
+        if len(device_ids) > 10:
+            return jsonify({
+                "status": "fail",
+                "error": "máximo 10 dispositivos",
+            }), 400
+        if year < 1970 or year > 2100:
+            return jsonify({
+                "status": "fail",
+                "error": "año fuera de rango",
+            }), 400
+
+        connection = None
+        try:
+            connection = connect()
+            sensor_ids: list[int] = []
+            for device_id in device_ids:
+                _, device_sensor_ids = get_device(connection, device_id)
+                sensor_ids.extend(device_sensor_ids)
+            sensor_ids = list(dict.fromkeys(sensor_ids))
+            placeholders = ", ".join(["%s"] * len(sensor_ids))
+
+            months_with_data: list[str] = []
+            cursor = connection.cursor()
+            try:
+                for month_number in range(1, 13):
+                    month_start = date(year, month_number, 1)
+                    month_end = (
+                        date(year + 1, 1, 1)
+                        if month_number == 12
+                        else date(year, month_number + 1, 1)
+                    )
+                    cursor.execute(
+                        f"""
+                        SELECT 1
+                        FROM sensores_dev.datos AS d
+                        FORCE INDEX (idx_datos_sensor_fecha)
+                        WHERE d.id_sensor IN ({placeholders})
+                          AND d.fecha >= %s
+                          AND d.fecha < %s
+                        LIMIT 1
+                        """,
+                        [*sensor_ids, month_start, month_end],
+                    )
+                    if cursor.fetchone() is not None:
+                        months_with_data.append(
+                            f"{year:04d}-{month_number:02d}"
+                        )
+            finally:
+                cursor.close()
+
+            response = jsonify({
+                "status": "success",
+                "data": {
+                    "year": year,
+                    "months": months_with_data,
+                    "device_ids": device_ids,
+                },
+            })
+            response.headers["Cache-Control"] = "private, max-age=60"
+            return response
+        except LookupError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 404
+        except mysql.connector.Error:
+            current_app.logger.exception(
+                "Error de MariaDB consultando meses disponibles V3"
+            )
+            return jsonify({
+                "status": "fail",
+                "error": "error consultando la base de datos",
+            }), 503
+        finally:
+            if connection is not None and connection.is_connected():
+                connection.close()
+
     @blueprint.get("/dispositivos/<int:device_id>/historico.ndjson")
     def stream_history(device_id: int):
         _, auth_error = require_authentication()

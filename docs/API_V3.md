@@ -107,6 +107,14 @@ descarga sus registros. Realiza como máximo 31 comprobaciones acotadas usando
 `idx_datos_sensor_fecha`; el portal utiliza la respuesta para marcar en verde
 los días disponibles.
 
+```http
+GET /v3/disponibilidad-meses?id_dispositivo=7&anio=2026
+```
+
+Devuelve los meses del año que contienen al menos una medición. Realiza 12
+comprobaciones indexadas y permite que el portal marque los meses disponibles
+antes de consultar sus días.
+
 ## Sesión temporal
 
 ```http

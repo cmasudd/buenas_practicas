@@ -38,6 +38,9 @@ export const DataPage = () => {
   const [availabilityMonth, setAvailabilityMonth] = useState(
     new Date().toLocaleDateString('en-CA').slice(0, 7)
   );
+  const [availabilityYear, setAvailabilityYear] = useState(
+    new Date().toLocaleDateString('en-CA').slice(0, 4)
+  );
 
   // Graficos
   const [showChart, setShowChart] = useState(false);
@@ -71,6 +74,11 @@ export const DataPage = () => {
     data: availabilityData,
     setUrl: availabilitySetUrl,
     isLoading: isLoadingAvailability,
+  } = useFetch('');
+  const {
+    data: availableMonthsData,
+    setUrl: availableMonthsSetUrl,
+    isLoading: isLoadingAvailableMonths,
   } = useFetch('');
 
   // actualizacion de datos
@@ -119,6 +127,21 @@ export const DataPage = () => {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDevices, availabilityMonth]);
+
+  useEffect(() => {
+    if (selectedDevices.length === 0 || !/^\d{4}$/.test(availabilityYear)) {
+      availableMonthsSetUrl('');
+      return;
+    }
+    const params = new URLSearchParams({
+      id_dispositivo: selectedDevices.map((device) => device.value).join(','),
+      anio: availabilityYear,
+    });
+    availableMonthsSetUrl(
+      `${import.meta.env.VITE_API_URL}/v3/disponibilidad-meses?${params.toString()}`
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDevices, availabilityYear]);
   useEffect(() => {
     const refreshTimer = window.setTimeout(refleshTableData, 500);
     const desc = projectsData?.data?.tableData?.filter(proj => proj?.id_proyecto === selectedProjects[0]?.value);
@@ -224,6 +247,7 @@ export const DataPage = () => {
     setStartDate(event.target.value);
     if (event.target.value) {
       setAvailabilityMonth(event.target.value.slice(0, 7));
+      setAvailabilityYear(event.target.value.slice(0, 4));
     }
     if (event.target.value && !endDate) {
       setEndDate(new Date().toLocaleDateString('en-CA'));
@@ -236,6 +260,7 @@ export const DataPage = () => {
     setEndDate(event.target.value);
     if (event.target.value) {
       setAvailabilityMonth(event.target.value.slice(0, 7));
+      setAvailabilityYear(event.target.value.slice(0, 4));
     }
     setCurrentPage(1); // Resetear a la primera página
     setCursorStack([null]);
@@ -248,11 +273,33 @@ export const DataPage = () => {
     setCursorStack([null]);
   };
 
+  const handleAvailabilityYearChange = (event) => {
+    const year = event.target.value;
+    setAvailabilityYear(year);
+    if (/^\d{4}$/.test(year)) {
+      setAvailabilityMonth(`${year}-${availabilityMonth.slice(5, 7)}`);
+    }
+  };
+
+  const handleAvailableMonthClick = (month) => {
+    setAvailabilityMonth(month);
+    setAvailabilityYear(month.slice(0, 4));
+  };
+
   const availabilityDays = new Set(
     availabilityData?.status === 'success'
       ? availabilityData.data.days
       : []
   );
+  const availableMonths = new Set(
+    availableMonthsData?.status === 'success'
+      ? availableMonthsData.data.months
+      : []
+  );
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  ];
   const [calendarYear, calendarMonth] = availabilityMonth
     .split('-')
     .map(Number);
@@ -434,6 +481,62 @@ export const DataPage = () => {
                 </div>
                 {selectedDevices.length > 0 && (
                   <div className="mb-4 px-3">
+                    <div className="d-flex justify-content-center align-items-end mb-3">
+                      <div>
+                        <label htmlFor="availability-year">
+                          Meses que contienen datos
+                        </label>
+                        <input
+                          type="number"
+                          id="availability-year"
+                          min="1970"
+                          max="2100"
+                          value={availabilityYear}
+                          onChange={handleAvailabilityYearChange}
+                          className="form-control mt-1"
+                        />
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(4, minmax(80px, 1fr))',
+                        gap: '0.35rem',
+                        maxWidth: '640px',
+                        margin: '0 auto 0.75rem',
+                      }}
+                    >
+                      {monthNames.map((monthName, index) => {
+                        const monthValue = `${availabilityYear}-${String(index + 1).padStart(2, '0')}`;
+                        const hasData = availableMonths.has(monthValue);
+                        const isSelected = availabilityMonth === monthValue;
+                        return (
+                          <button
+                            type="button"
+                            key={monthValue}
+                            disabled={!hasData}
+                            onClick={() => handleAvailableMonthClick(monthValue)}
+                            className={`btn btn-sm ${
+                              isSelected && hasData
+                                ? 'btn-dark'
+                                : hasData
+                                  ? 'btn-success'
+                                  : 'btn-light text-muted'
+                            }`}
+                            title={hasData ? 'Este mes contiene datos' : 'Sin datos'}
+                          >
+                            {monthName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-muted text-center mt-2">
+                      {isLoadingAvailableMonths
+                        ? 'Buscando meses con datos…'
+                        : availableMonths.size > 0
+                          ? 'Los meses verdes contienen datos.'
+                          : 'No se encontraron datos para este año.'}
+                    </p>
                     <div className="d-flex justify-content-center align-items-end mb-2">
                       <div>
                         <label htmlFor="availability-month">
@@ -446,6 +549,7 @@ export const DataPage = () => {
                           onChange={(event) => {
                             if (event.target.value) {
                               setAvailabilityMonth(event.target.value);
+                              setAvailabilityYear(event.target.value.slice(0, 4));
                             }
                           }}
                           className="form-control mt-1"

@@ -68,6 +68,8 @@ evitar duplicados mientras el usuario completa el formulario.
 Un calendario mensual marca los días que contienen al menos una medición para
 los dispositivos seleccionados. La comprobación usa el índice por sensor y
 fecha y no ejecuta conteos sobre el histórico.
+Una vista anual aplica el mismo criterio para marcar primero los meses que
+contienen datos.
 
 ## Índices comprobados en producción
 
