@@ -190,7 +190,11 @@ def _merge_wide_rows(
             }
             values: dict[str, list[Any]] = {}
             for row in rows:
-                values.setdefault(row["unidad_medida"], []).append(row["valor"])
+                column = row.get("unidad_medida") or (
+                    f"Sensor {row['id_sensor']} "
+                    f"[Variable {row['id_variable']}]"
+                )
+                values.setdefault(column, []).append(row["valor"])
             for column, column_values in values.items():
                 output[column] = ", ".join(
                     str(_serialize(value)) for value in column_values
@@ -446,7 +450,16 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             cursor.execute(
                 f"""
                 SELECT DISTINCT
-                       CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]')
+                       CONCAT(
+                           COALESCE(
+                               NULLIF(TRIM(st.modelo), ''),
+                               NULLIF(TRIM(st.marca), ''),
+                               CONCAT('Sensor tipo ', st.id_sensor_tipo)
+                           ),
+                           ' [',
+                           COALESCE(v.descripcion, CONCAT('Variable ', d.id_variable)),
+                           ' (', COALESCE(v.unidad, 'sin unidad'), ')]'
+                       )
                 FROM sensores_dev.datos AS d
                 JOIN sensores_dev.variables AS v
                   ON v.id_variable = d.id_variable
@@ -496,8 +509,19 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
                            d.id_sensor, d.id_variable, d.id_sesion, d.valor,
                            s.descripcion AS sesion_descripcion,
                            s.fecha_inicio, s.ubicacion,
-                           CONCAT(st.modelo, ' [', v.descripcion, ' (',
-                                  v.unidad, ')]') AS unidad_medida
+                           CONCAT(
+                               COALESCE(
+                                   NULLIF(TRIM(st.modelo), ''),
+                                   NULLIF(TRIM(st.marca), ''),
+                                   CONCAT('Sensor tipo ', st.id_sensor_tipo)
+                               ),
+                               ' [',
+                               COALESCE(
+                                   v.descripcion,
+                                   CONCAT('Variable ', d.id_variable)
+                               ),
+                               ' (', COALESCE(v.unidad, 'sin unidad'), ')]'
+                           ) AS unidad_medida
                     FROM sensores_dev.datos AS d
                     FORCE INDEX (idx_datos_sensor_fecha)
                     JOIN sensores_dev.variables AS v

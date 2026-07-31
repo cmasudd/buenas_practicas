@@ -92,6 +92,30 @@ class CursorTests(unittest.TestCase):
         self.assertEqual(rows[0]["Sensor B [Humedad (%)]"], "70")
         self.assertEqual(rows[0]["id_dato_concatenado"], "4, 3")
 
+    def test_wide_rows_uses_stable_fallback_for_missing_sensor_metadata(self):
+        timestamp = datetime(2026, 5, 6, 15, 42, 53)
+        rows = list(_merge_wide_rows([
+            iter([{
+                "fecha": timestamp,
+                "fecha_insercion": timestamp,
+                "id_dato": 10,
+                "id_sensor": 28,
+                "id_variable": 3,
+                "id_sesion": None,
+                "sesion_descripcion": None,
+                "fecha_inicio": None,
+                "ubicacion": None,
+                "unidad_medida": None,
+                "valor": 21.5,
+            }]),
+        ], {
+            "id_proyecto": 2,
+            "codigo_interno": "HIRI-01",
+            "descripcion": None,
+        }))
+
+        self.assertEqual(rows[0]["Sensor 28 [Variable 3]"], "21.5")
+
 
 class MicrosoftLoginTests(unittest.TestCase):
     @patch("historico_v3.PyJWKClient.get_signing_key_from_jwt")
