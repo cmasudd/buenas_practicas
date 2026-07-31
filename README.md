@@ -8,7 +8,7 @@ una API V3 por dispositivo.
 - Mantener funcionando las rutas antiguas.
 - Ocultar al cliente la relación dispositivo–sensores.
 - Evitar consultas masivas con `OFFSET` o listas enormes de sensores.
-- Permitir descargas NDJSON reanudables.
+- Permitir descargas NDJSON reanudables y CSV desde la web autenticada.
 - Acotar memoria y trabajo de MariaDB.
 
 ## Componentes
@@ -29,6 +29,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 python download_v3.py \
+  --username USUARIO \
   --device-id 224 \
   --start-date 2026-07-23 \
   --end-date 2026-07-23 \
@@ -36,8 +37,21 @@ python download_v3.py \
 ```
 
 El cliente descarga un dispositivo completo; no requiere conocer sus sensores.
+Solicita la contraseña de forma interactiva y no la guarda ni la muestra en la
+línea de comandos.
 Durante una caída conserva `.part` y `.state.json`. Al completar genera
 `ndjson.gz` y elimina los temporales.
+
+## Descarga desde sensores.cmasccp.cl
+
+El sitio usa una sesión HTTP-only validada por el servidor. La descarga CSV
+acepta uno o varios `id_dispositivo`; si se omiten las fechas, recorre todo el
+histórico disponible. MariaDB se consulta en páginas keyset de 1.000 filas y la
+respuesta se transmite sin construir el archivo completo en memoria.
+
+Solo se permite una exportación CSV activa. Una segunda solicitud espera hasta
+30 segundos y, si el turno sigue ocupado, recibe HTTP 429 con `Retry-After: 30`.
+Esto es un cortacircuito seguro, no una cola persistente de trabajos.
 
 ## Índices comprobados en producción
 
@@ -56,7 +70,6 @@ permite recorrer el índice sin ordenar todo el rango histórico en cada página
 ## Estado
 
 La API V3 mantiene consultas paginadas y streaming reanudable para integraciones
-controladas. Para el sitio público Aire Aconcagua, los históricos se publican
-como CSV mensuales en GitHub Pages y la API se reserva para una última lectura
-acotada. La implementación y las verificaciones operativas se describen en
-`docs/HISTORICO_CSV_GITHUB.md`.
+controladas. El portal de sensores puede exportar CSV autenticado directamente;
+la publicación de cortes mensuales en GitHub sigue siendo una alternativa para
+datos abiertos de alta demanda.

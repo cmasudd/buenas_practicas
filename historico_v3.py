@@ -11,12 +11,20 @@ Este módulo no reemplaza rutas legacy. Se registra con un prefijo /v3 y usa:
 from __future__ import annotations
 
 import base64
+import csv
+import fcntl
+import io
 import json
+import os
+import secrets
+import time
 from datetime import date, datetime
 from typing import Any, Iterator
 
 import decimal
 import mysql.connector
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.security import check_password_hash
 from flask import (
     Blueprint,
     Response,
@@ -29,6 +37,9 @@ from flask import (
 
 DEFAULT_PAGE_SIZE = 500
 MAX_PAGE_SIZE = 1000
+SESSION_COOKIE = "historico_session"
+SESSION_MAX_AGE = 8 * 60 * 60
+EXPORT_LOCK_PATH = "/tmp/api-sensores-historico.lock"
 
 
 def _encode_cursor(id_sensor: int, fecha: datetime | str, id_dato: int) -> str:
@@ -63,6 +74,8 @@ def _parse_date(value: str | None, field: str) -> date:
 
 
 def _serialize(value: Any) -> Any:
+    if value is None:
+        return ""
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, decimal.Decimal):
@@ -77,6 +90,74 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         connection = mysql.connector.connect(**db_config)
         connection.autocommit = True
         return connection
+
+    def serializer() -> URLSafeTimedSerializer:
+        secret = os.getenv("HISTORICO_SESSION_SECRET")
+        if not secret:
+            raise RuntimeError("HISTORICO_SESSION_SECRET no configurado")
+        return URLSafeTimedSerializer(secret, salt="historico-v3")
+
+    def authenticated_user() -> str | None:
+        token = request.cookies.get(SESSION_COOKIE)
+        if not token:
+            return None
+        try:
+            payload = serializer().loads(token, max_age=SESSION_MAX_AGE)
+        except (BadSignature, SignatureExpired):
+            return None
+        username = payload.get("sub") if isinstance(payload, dict) else None
+        return username if isinstance(username, str) else None
+
+    def require_authentication():
+        username = authenticated_user()
+        if username:
+            return username, None
+        return None, (
+            jsonify({"status": "fail", "error": "autenticación requerida"}),
+            401,
+        )
+
+    @blueprint.post("/auth/login")
+    def login():
+        payload = request.get_json(silent=True) or {}
+        username = str(payload.get("username", ""))
+        password = str(payload.get("password", ""))
+        expected_user = os.getenv("HISTORICO_USER", "")
+        password_hash = os.getenv("HISTORICO_PASSWORD_HASH", "")
+        valid = (
+            bool(expected_user)
+            and bool(password_hash)
+            and secrets.compare_digest(username, expected_user)
+            and check_password_hash(password_hash, password)
+        )
+        if not valid:
+            return jsonify({"status": "fail", "error": "credenciales inválidas"}), 401
+
+        token = serializer().dumps({"sub": username})
+        response = jsonify({"status": "success", "user": username})
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            max_age=SESSION_MAX_AGE,
+            secure=True,
+            httponly=True,
+            samesite="Strict",
+            path="/v3",
+        )
+        return response
+
+    @blueprint.get("/auth/status")
+    def auth_status():
+        username = authenticated_user()
+        if not username:
+            return jsonify({"authenticated": False}), 401
+        return jsonify({"authenticated": True, "user": username})
+
+    @blueprint.post("/auth/logout")
+    def logout():
+        response = jsonify({"status": "success"})
+        response.delete_cookie(SESSION_COOKIE, path="/v3")
+        return response
 
     def get_device(connection, device_id: int) -> tuple[dict[str, Any], list[int]]:
         cursor = connection.cursor(dictionary=True)
@@ -251,6 +332,9 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/dispositivos/<int:device_id>/historico.ndjson")
     def stream_history(device_id: int):
+        _, auth_error = require_authentication()
+        if auth_error:
+            return auth_error
         try:
             start, end, page_size, cursor_value = parse_request()
         except ValueError as error:
@@ -333,6 +417,121 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
                 "X-Accel-Buffering": "no",
                 "Content-Disposition": (
                     f'attachment; filename="dispositivo-{device_id}-historico.ndjson"'
+                ),
+            },
+        )
+
+    @blueprint.get("/historicos.csv")
+    def stream_csv_history():
+        username, auth_error = require_authentication()
+        if auth_error:
+            return auth_error
+
+        raw_device_ids = request.args.get("id_dispositivo", "")
+        try:
+            device_ids = list(dict.fromkeys(
+                int(value.strip())
+                for value in raw_device_ids.split(",")
+                if value.strip()
+            ))
+        except ValueError:
+            return jsonify({"status": "fail", "error": "id_dispositivo inválido"}), 400
+        if not device_ids:
+            return jsonify({"status": "fail", "error": "id_dispositivo es obligatorio"}), 400
+        if len(device_ids) > 25:
+            return jsonify({"status": "fail", "error": "máximo 25 dispositivos por descarga"}), 400
+
+        try:
+            start = _parse_date(
+                request.args.get("fecha_inicio", "1970-01-01"),
+                "fecha_inicio",
+            )
+            end = _parse_date(
+                request.args.get("fecha_fin", date.today().isoformat()),
+                "fecha_fin",
+            )
+            if start > end:
+                raise ValueError("fecha_inicio no puede ser posterior a fecha_fin")
+        except ValueError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 400
+
+        lock_file = open(EXPORT_LOCK_PATH, "a+")
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    lock_file.close()
+                    return (
+                        jsonify({
+                            "status": "queued",
+                            "error": "hay otra descarga en curso; intente nuevamente",
+                        }),
+                        429,
+                        {"Retry-After": "30"},
+                    )
+                time.sleep(0.5)
+
+        columns = [
+            "id_dato", "fecha", "fecha_insercion", "id_proyecto",
+            "id_dispositivo", "codigo_interno", "id_sensor", "id_variable",
+            "variable_descripcion", "unidad", "id_sesion", "valor",
+        ]
+
+        @stream_with_context
+        def generate_csv() -> Iterator[str]:
+            connection = None
+            buffer = io.StringIO()
+            writer = csv.writer(buffer, lineterminator="\n")
+            try:
+                writer.writerow(columns)
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate(0)
+
+                connection = connect()
+                for device_id in device_ids:
+                    device, sensor_ids = get_device(connection, device_id)
+                    cursor_value = None
+                    while True:
+                        rows, next_cursor = fetch_page(
+                            connection,
+                            device,
+                            sensor_ids,
+                            start,
+                            end,
+                            cursor_value,
+                            MAX_PAGE_SIZE,
+                        )
+                        for row in rows:
+                            writer.writerow([_serialize(row.get(column)) for column in columns])
+                        if buffer.tell():
+                            yield buffer.getvalue()
+                            buffer.seek(0)
+                            buffer.truncate(0)
+                        if not rows or len(rows) < MAX_PAGE_SIZE:
+                            break
+                        cursor_value = _decode_cursor(next_cursor)
+            except (LookupError, mysql.connector.Error):
+                current_app.logger.exception(
+                    "Error exportando histórico CSV para %s", username
+                )
+            finally:
+                if connection is not None and connection.is_connected():
+                    connection.close()
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                lock_file.close()
+
+        return Response(
+            generate_csv(),
+            mimetype="text/csv",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+                "Content-Disposition": (
+                    f'attachment; filename="historico-{start}-{end}.csv"'
                 ),
             },
         )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import gzip
 import json
 import os
@@ -33,6 +34,7 @@ def download(
     end_date: str,
     output_dir: Path,
     retries: int = 5,
+    session: requests.Session | None = None,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = f"dispositivo-{device_id}_{start_date}_{end_date}"
@@ -58,6 +60,8 @@ def download(
     )
     attempts = 0
 
+    http = session or requests.Session()
+
     while not state["complete"]:
         confirmed_rows = int(state["rows"])
         params = {
@@ -69,7 +73,7 @@ def download(
             params["cursor"] = state["cursor"]
 
         try:
-            with requests.get(
+            with http.get(
                 endpoint,
                 params=params,
                 stream=True,
@@ -121,6 +125,18 @@ def download(
     return final_path
 
 
+def login(api_url: str, username: str, password: str) -> requests.Session:
+    """Crea una sesión autenticada sin guardar la contraseña en disco."""
+    session = requests.Session()
+    response = session.post(
+        f"{api_url.rstrip('/')}/v3/auth/login",
+        json={"username": username, "password": password},
+        timeout=(15, 30),
+    )
+    response.raise_for_status()
+    return session
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Descarga histórica V3 por id_dispositivo."
@@ -130,17 +146,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--end-date", required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("descargas"))
     parser.add_argument("--api-url", default=DEFAULT_API)
+    parser.add_argument(
+        "--username",
+        default=os.getenv("HISTORICO_USER"),
+        help="Usuario V3 (o variable HISTORICO_USER).",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    username = args.username or input("Usuario: ").strip()
+    password = getpass.getpass("Contraseña: ")
+    session = login(args.api_url, username, password)
     path = download(
         args.api_url,
         args.device_id,
         args.start_date,
         args.end_date,
         args.output_dir,
+        session=session,
     )
     print(f"Descarga completa: {path}", flush=True)
 

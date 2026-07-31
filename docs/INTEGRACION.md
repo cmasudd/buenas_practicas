@@ -18,6 +18,19 @@ app.register_blueprint(create_historico_v3_blueprint(config))
 
 No se deben imprimir `config` ni las credenciales en logs.
 
+El proceso debe cargar además estas variables desde un archivo fuera del
+repositorio:
+
+```dotenv
+HISTORICO_SESSION_SECRET=secreto-aleatorio-largo
+HISTORICO_USER=usuario
+HISTORICO_PASSWORD_HASH=hash-generado-por-werkzeug
+```
+
+Para el portal React se incluyen ejemplos en `frontend/`. Las solicitudes de
+login usan `credentials: "include"`; el API debe permitir credenciales CORS
+solo desde el origen exacto del portal.
+
 ## Protección temporal de V2
 
 V2 sigue atendiendo consultas pequeñas. En producción se agregó un cortacircuito
