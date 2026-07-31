@@ -57,10 +57,11 @@ Solo se permite una exportación CSV activa. Una segunda solicitud espera hasta
 30 segundos y, si el turno sigue ocupado, recibe HTTP 429 con `Retry-After: 30`.
 Esto es un cortacircuito seguro, no una cola persistente de trabajos.
 
-La tabla del portal es solo una vista previa y limita las consultas legacy a 31
-días. La descarga CSV permanece disponible para rangos mayores y usa V3. Los
-cambios de filtros se agrupan durante 500 ms y las solicitudes HTTP reemplazadas
-se abortan para evitar duplicados mientras el usuario completa el formulario.
+La tabla del portal muestra mediante V3 las 25 mediciones estructuradas más
+recientes, sin recorrer todo el histórico. La descarga CSV usa el rango completo
+seleccionado. Los cambios de filtros se
+agrupan durante 500 ms y las solicitudes HTTP reemplazadas se abortan para
+evitar duplicados mientras el usuario completa el formulario.
 
 ## Índices comprobados en producción
 

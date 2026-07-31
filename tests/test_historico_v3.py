@@ -15,6 +15,7 @@ from historico_v3 import (
     _parse_date,
     _merge_wide_rows,
     _serialize,
+    _safe_filename_part,
     _validate_microsoft_issuer,
 )
 
@@ -34,6 +35,10 @@ class CursorTests(unittest.TestCase):
 
     def test_csv_null_is_empty(self):
         self.assertEqual(_serialize(None), "")
+
+    def test_safe_download_filename(self):
+        self.assertEqual(_safe_filename_part("AIRE-01"), "AIRE-01")
+        self.assertEqual(_safe_filename_part("Estación / Norte"), "Estaci-n-Norte")
 
     def test_microsoft_v2_issuer(self):
         tenant = "9188040d-6c67-4c5b-b112-36a304b66dad"

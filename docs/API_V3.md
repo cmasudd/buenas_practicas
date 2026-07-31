@@ -58,6 +58,10 @@ para los dispositivos solicitados; no están fijadas a una estación. El archivo
 comienza con BOM UTF-8 para que Excel interprete correctamente tildes, `µ` y
 `m³`. El formato normalizado anterior se conserva con `formato=largo`.
 
+`Content-Disposition` usa los códigos reales y el rango solicitado, por ejemplo
+`AIRE-01_2026-05-15_2026-07-31.csv`. Para varios dispositivos concatena sus
+códigos y limita el componente a 120 caracteres seguros.
+
 Para construir la forma ancha sin ordenar millones de filas, cada sensor se
 recorre con el índice `idx_datos_sensor_fecha` y cursor descendente. El servidor
 fusiona esas series por fecha mediante un heap acotado y emite bloques CSV de
@@ -66,6 +70,17 @@ fusiona esas series por fecha mediante un heap acotado y emite bloques CSV de
 La exportación exige sesión autenticada. Hay una sola exportación activa por
 servidor; las solicitudes concurrentes esperan hasta 30 segundos y luego
 reciben HTTP 429 con `Retry-After: 30`.
+
+## Vista previa reciente
+
+```http
+GET /v3/vista-previa?id_dispositivo=92&limite=25
+```
+
+Devuelve las mediciones estructuradas más recientes con la misma forma ancha de
+la web. Recorre cada sensor en orden descendente mediante
+`idx_datos_sensor_fecha` y no ejecuta el JOIN legacy sobre todo el histórico.
+Acepta hasta 10 dispositivos y un máximo de 100 filas.
 
 ## Sesión temporal
 

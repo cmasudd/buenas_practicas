@@ -48,11 +48,7 @@ export const useFetch = (apiUrl) => {
 
   // wrapper for setUrl: if the new url is equal to the current one, trigger a fetch
   const setUrl = (newUrl) => {
-    if (newUrl === url) {
-      // mismo valor: forzar fetch
-      forceFetch();
-    }
-    setUrlState(newUrl);
+    if (newUrl !== url) setUrlState(newUrl);
   };
 
   return { data, isLoading, hasError, setUrl, url, forceFetch };

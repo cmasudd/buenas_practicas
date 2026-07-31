@@ -56,7 +56,12 @@ export const DataPage = () => {
   // Hooks para obtener datos de las tablas
   const { data: projectsData, isLoading: isLoadingProjects } = useFetch(`${import.meta.env.VITE_API_URL}/listarDatos?tabla=${projectsTableName}`);
   const { data: devicesData, setUrl: devicesSetUrl, isLoading: isLoadingDevices } = useFetch('');
-  const { data: sensorsData, setUrl: sensorsSetUrl, isLoading: isLoadingSensors } = useFetch('');
+  const {
+    data: sensorsData,
+    setUrl: sensorsSetUrl,
+    isLoading: isLoadingSensors,
+    forceFetch: forceSensorsFetch,
+  } = useFetch('');
 
   // actualizacion de datos
   const [refreshCount, setRefreshCount] = useState(0);
@@ -104,37 +109,23 @@ export const DataPage = () => {
     return () => window.clearTimeout(refreshTimer);
   }, [selectedProjects, selectedDevices, startDate, endDate, currentPage, refreshCount]);
   const handleRefresh = () => {
-    setRefreshCount(c => c + 1);
+    forceSensorsFetch();
   };
   // Actualiza la peticion de datos dependiendo de dispositivos y proyectos seleccionados
   const refleshTableData = async () => {
     console.log("actualizando datos")
     if (selectedProjects.length > 0) {
       const projectIds = selectedProjects.map((project) => project.value).join(',');
-      const deviceIds = selectedDevices.map((device) => device.label).join(',');
+      const deviceCodes = selectedDevices.map((device) => device.label).join(',');
+      const deviceIds = selectedDevices.map((device) => device.value).join(',');
       console.log('refleshTableData filters:', { projectIds, deviceIds, startDate, endDate, currentPage, refreshCount });
       setIsLoading(true);
       devicesSetUrl(`${import.meta.env.VITE_API_URL}/listarDatos?tabla=${devicesTableName}&id_proyecto=${projectIds}`);
 
-      // parámetro único para forzar el fetch
-      const refreshParam = `refresh=${Date.now()}`;
-      // let url = `${import.meta.env.VITE_API_URL}/listarDatosEstructuradosV2?tabla=datos&disp.id_proyecto=${projectIds}&limite=${rowsPerPage}&offset=${(currentPage - 1) * rowsPerPage}&${refreshParam}`;
-      let url = `${import.meta.env.VITE_API_URL}/listarDatosEstructuradosV2?tabla=datos&order_by=fecha_insercion&disp.id_proyecto=${projectIds}&limite=${rowsPerPage}&offset=${(currentPage - 1) * rowsPerPage}`;
-
-      const rangeDays = startDate && endDate
-        ? Math.floor((new Date(endDate) - new Date(startDate)) / 86400000) + 1
-        : 0;
-
-      // La tabla legacy es solo una vista previa. Los rangos históricos largos
-      // se descargan por V3 sin lanzar el JOIN pesado de V2.
-      if (selectedDevices.length > 0 && startDate && endDate && rangeDays <= 31) {
-        url += `&disp.codigo_interno=${deviceIds}`;
-        if (startDate) url += `&fecha_inicio=${startDate}`;
-        if (endDate) url += `&fecha_fin=${endDate}`;
-
-        console.log('refleshTableData url:', url);
-
-        sensorsSetUrl(url);
+      if (selectedDevices.length > 0) {
+        const previewUrl = `${import.meta.env.VITE_API_URL}/v3/vista-previa?id_dispositivo=${deviceIds}&limite=${rowsPerPage}`;
+        console.log('refleshTableData preview:', { previewUrl, deviceCodes });
+        sensorsSetUrl(previewUrl);
         setIsLoading(false);
       } else {
         sensorsSetUrl("");
@@ -358,11 +349,10 @@ export const DataPage = () => {
                     />
                   </div>
                 </div>
-                {startDate && endDate &&
-                  (Math.floor((new Date(endDate) - new Date(startDate)) / 86400000) + 1 > 31) && (
-                    <p className="text-muted text-center">
-                      La vista previa se limita a 31 días. El CSV descargará el rango completo seleccionado.
-                    </p>
+                {selectedDevices.length > 0 && (
+                  <p className="text-muted text-center">
+                    La tabla muestra las 25 mediciones más recientes. Las fechas se aplican a la descarga CSV.
+                  </p>
                 )}
                 <div className="row d-flex justify-content-around my-2 py-4">
                   <div className="dropdown mb-4 col-3">

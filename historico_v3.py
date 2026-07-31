@@ -15,8 +15,10 @@ import csv
 import fcntl
 import heapq
 import io
+import itertools
 import json
 import os
+import re
 import secrets
 import time
 import uuid
@@ -101,6 +103,11 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, decimal.Decimal):
         return float(value)
     return str(value)
+
+
+def _safe_filename_part(value: Any) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value)).strip("-._")
+    return cleaned or "dispositivo"
 
 
 def _validate_microsoft_issuer(claims: dict[str, Any]) -> None:
@@ -462,6 +469,7 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         sensor_id: int,
         start: date,
         end: date,
+        page_size: int = MAX_PAGE_SIZE,
     ) -> Iterator[dict[str, Any]]:
         cursor_value: tuple[datetime, int] | None = None
         while True:
@@ -477,7 +485,7 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
                     "(d.fecha < %s OR (d.fecha = %s AND d.id_dato < %s))"
                 )
                 params.extend([cursor_date, cursor_date, cursor_id])
-            params.append(MAX_PAGE_SIZE)
+            params.append(min(max(int(page_size), 1), MAX_PAGE_SIZE))
 
             cursor = connection.cursor(dictionary=True)
             try:
@@ -512,7 +520,7 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
             for row in rows:
                 yield row
-            if len(rows) < MAX_PAGE_SIZE:
+            if len(rows) < min(max(int(page_size), 1), MAX_PAGE_SIZE):
                 break
             last = rows[-1]
             cursor_value = (last["fecha"], int(last["id_dato"]))
@@ -574,6 +582,72 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             return jsonify(
                 {"status": "fail", "error": "error consultando la base de datos"}
             ), 503
+        finally:
+            if connection is not None and connection.is_connected():
+                connection.close()
+
+    @blueprint.get("/vista-previa")
+    def latest_preview():
+        raw_device_ids = request.args.get("id_dispositivo", "")
+        try:
+            device_ids = list(dict.fromkeys(
+                int(value.strip())
+                for value in raw_device_ids.split(",")
+                if value.strip()
+            ))
+            limit = min(max(int(request.args.get("limite", 25)), 1), 100)
+        except ValueError:
+            return jsonify({"status": "fail", "error": "parámetros inválidos"}), 400
+        if not device_ids:
+            return jsonify({"status": "fail", "error": "id_dispositivo es obligatorio"}), 400
+        if len(device_ids) > 10:
+            return jsonify({"status": "fail", "error": "máximo 10 dispositivos"}), 400
+
+        connection = None
+        try:
+            connection = connect()
+            candidates: list[dict[str, Any]] = []
+            for device_id in device_ids:
+                device, sensor_ids = get_device(connection, device_id)
+                streams = [
+                    iter_sensor_rows(
+                        connection,
+                        sensor_id,
+                        date(1970, 1, 1),
+                        date.today(),
+                        page_size=500,
+                    )
+                    for sensor_id in sensor_ids
+                ]
+                candidates.extend(itertools.islice(
+                    _merge_wide_rows(streams, device),
+                    limit,
+                ))
+
+            candidates.sort(
+                key=lambda row: (row["fecha"], row["codigo_interno"]),
+                reverse=True,
+            )
+            table_data = [
+                {key: _serialize(value) for key, value in row.items()}
+                for row in candidates[:limit]
+            ]
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "tableData": table_data,
+                    "totalCount": len(table_data),
+                    "preview": True,
+                },
+            })
+        except LookupError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 404
+        except mysql.connector.Error:
+            current_app.logger.exception("Error de MariaDB en vista previa V3")
+            return jsonify({
+                "status": "fail",
+                "error": "error consultando la base de datos",
+            }), 503
         finally:
             if connection is not None and connection.is_connected():
                 connection.close()
@@ -710,6 +784,30 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
                 "error": "formato debe ser web o largo",
             }), 400
 
+        metadata_connection = None
+        try:
+            metadata_connection = connect()
+            device_codes = [
+                str(get_device(metadata_connection, device_id)[0]["codigo_interno"])
+                for device_id in device_ids
+            ]
+        except LookupError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 404
+        except mysql.connector.Error:
+            current_app.logger.exception("Error obteniendo nombres para CSV")
+            return jsonify({
+                "status": "fail",
+                "error": "error consultando la base de datos",
+            }), 503
+        finally:
+            if metadata_connection is not None and metadata_connection.is_connected():
+                metadata_connection.close()
+
+        device_filename = "-".join(
+            _safe_filename_part(code) for code in device_codes
+        )[:120].rstrip("-._")
+        download_filename = f"{device_filename}_{start}_{end}.csv"
+
         lock_file = open(EXPORT_LOCK_PATH, "a+")
         deadline = time.monotonic() + 30
         while True:
@@ -832,7 +930,7 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
                 "Cache-Control": "no-store",
                 "X-Accel-Buffering": "no",
                 "Content-Disposition": (
-                    f'attachment; filename="historico-{start}-{end}.csv"'
+                    f'attachment; filename="{download_filename}"'
                 ),
             },
         )
@@ -845,5 +943,6 @@ __all__ = [
     "_decode_cursor",
     "_encode_cursor",
     "_parse_date",
+    "_safe_filename_part",
     "_validate_microsoft_issuer",
 ]
