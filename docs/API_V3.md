@@ -51,6 +51,18 @@ usa desde `1970-01-01` hasta el día actual. La respuesta se transmite como
 `text/csv` y procesa los dispositivos secuencialmente en páginas de 1.000 filas.
 Admite como máximo 25 dispositivos por solicitud.
 
+El formato predeterminado, `formato=web`, reproduce la tabla estructurada del
+portal: una fila por fecha, metadatos de sesión y dispositivo, una columna
+dinámica por modelo/variable y `id_dato_concatenado`. Las columnas se calculan
+para los dispositivos solicitados; no están fijadas a una estación. El archivo
+comienza con BOM UTF-8 para que Excel interprete correctamente tildes, `µ` y
+`m³`. El formato normalizado anterior se conserva con `formato=largo`.
+
+Para construir la forma ancha sin ordenar millones de filas, cada sensor se
+recorre con el índice `idx_datos_sensor_fecha` y cursor descendente. El servidor
+fusiona esas series por fecha mediante un heap acotado y emite bloques CSV de
+64 KiB; no crea un DataFrame ni mantiene el histórico completo en memoria.
+
 La exportación exige sesión autenticada. Hay una sola exportación activa por
 servidor; las solicitudes concurrentes esperan hasta 30 segundos y luego
 reciben HTTP 429 con `Retry-After: 30`.

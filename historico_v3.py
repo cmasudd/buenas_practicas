@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import csv
 import fcntl
+import heapq
 import io
 import json
 import os
@@ -48,6 +49,17 @@ MICROSOFT_JWKS_URL = (
     "https://login.microsoftonline.com/common/discovery/v2.0/keys"
 )
 DEFAULT_MICROSOFT_CLIENT_ID = "8e94a7e7-a878-4e6d-9021-8231737ebec5"
+WIDE_BASE_COLUMNS = [
+    "fecha",
+    "fecha_insercion",
+    "id_sesion",
+    "sesion_descripcion",
+    "fecha_inicio",
+    "ubicacion",
+    "id_proyecto",
+    "codigo_interno",
+    "dispositivo_descripcion",
+]
 
 
 def _encode_cursor(id_sensor: int, fecha: datetime | str, id_dato: int) -> str:
@@ -107,6 +119,79 @@ def _validate_microsoft_issuer(claims: dict[str, Any]) -> None:
     )
     if not secrets.compare_digest(str(claims.get("iss", "")), expected):
         raise ValueError("emisor de Microsoft inválido")
+
+
+def _descending_row_key(row: dict[str, Any], stream_index: int) -> tuple[Any, ...]:
+    return (-row["fecha"].timestamp(), -int(row["id_dato"]), stream_index)
+
+
+def _merge_wide_rows(
+    streams: list[Iterator[dict[str, Any]]],
+    device: dict[str, Any],
+) -> Iterator[dict[str, Any]]:
+    """Fusiona series indexadas por sensor y pivota una fecha a una fila."""
+    heap: list[tuple[Any, ...]] = []
+    for stream_index, stream in enumerate(streams):
+        row = next(stream, None)
+        if row is not None:
+            heapq.heappush(
+                heap,
+                (*_descending_row_key(row, stream_index), row, stream),
+            )
+
+    while heap:
+        current_date = heap[0][3]["fecha"]
+        same_date: list[dict[str, Any]] = []
+        while heap and heap[0][3]["fecha"] == current_date:
+            _, _, stream_index, row, stream = heapq.heappop(heap)
+            same_date.append(row)
+            following = next(stream, None)
+            if following is not None:
+                heapq.heappush(
+                    heap,
+                    (*_descending_row_key(following, stream_index), following, stream),
+                )
+
+        groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        for row in same_date:
+            group_key = (
+                row["fecha"],
+                row.get("fecha_insercion"),
+                row.get("id_sesion") or "Sin sesión",
+                row.get("sesion_descripcion") or "",
+                row.get("fecha_inicio") or "",
+                row.get("ubicacion") or "",
+            )
+            groups.setdefault(group_key, []).append(row)
+
+        for group_key in sorted(
+            groups,
+            key=lambda key: tuple(str(_serialize(value)) for value in key),
+            reverse=True,
+        ):
+            rows = groups[group_key]
+            output: dict[str, Any] = {
+                "fecha": group_key[0],
+                "fecha_insercion": group_key[1] or "",
+                "id_sesion": group_key[2],
+                "sesion_descripcion": group_key[3],
+                "fecha_inicio": group_key[4],
+                "ubicacion": group_key[5],
+                "id_proyecto": device["id_proyecto"],
+                "codigo_interno": device["codigo_interno"],
+                "dispositivo_descripcion": device.get("descripcion") or "",
+            }
+            values: dict[str, list[Any]] = {}
+            for row in rows:
+                values.setdefault(row["unidad_medida"], []).append(row["valor"])
+            for column, column_values in values.items():
+                output[column] = ", ".join(
+                    str(_serialize(value)) for value in column_values
+                )
+            output["id_dato_concatenado"] = ", ".join(
+                str(row["id_dato"]) for row in rows
+            )
+            yield output
 
 
 def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
@@ -342,6 +427,96 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             )
         return rows, next_cursor
 
+    def get_measurement_columns(
+        connection,
+        sensor_ids: list[int],
+        start: date,
+        end: date,
+    ) -> list[str]:
+        placeholders = ", ".join(["%s"] * len(sensor_ids))
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                f"""
+                SELECT DISTINCT
+                       CONCAT(st.modelo, ' [', v.descripcion, ' (', v.unidad, ')]')
+                FROM sensores_dev.datos AS d
+                JOIN sensores_dev.variables AS v
+                  ON v.id_variable = d.id_variable
+                JOIN sensores_dev.sensores AS sens
+                  ON sens.id_sensor = d.id_sensor
+                JOIN sensores_dev.sensores_tipo AS st
+                  ON st.id_sensor_tipo = sens.id_sensor_tipo
+                WHERE d.id_sensor IN ({placeholders})
+                  AND d.fecha >= %s
+                  AND d.fecha < DATE_ADD(%s, INTERVAL 1 DAY)
+                """,
+                [*sensor_ids, start, end],
+            )
+            return sorted(str(row[0]) for row in cursor.fetchall() if row[0])
+        finally:
+            cursor.close()
+
+    def iter_sensor_rows(
+        connection,
+        sensor_id: int,
+        start: date,
+        end: date,
+    ) -> Iterator[dict[str, Any]]:
+        cursor_value: tuple[datetime, int] | None = None
+        while True:
+            clauses = [
+                "d.id_sensor = %s",
+                "d.fecha >= %s",
+                "d.fecha < DATE_ADD(%s, INTERVAL 1 DAY)",
+            ]
+            params: list[Any] = [sensor_id, start, end]
+            if cursor_value:
+                cursor_date, cursor_id = cursor_value
+                clauses.append(
+                    "(d.fecha < %s OR (d.fecha = %s AND d.id_dato < %s))"
+                )
+                params.extend([cursor_date, cursor_date, cursor_id])
+            params.append(MAX_PAGE_SIZE)
+
+            cursor = connection.cursor(dictionary=True)
+            try:
+                cursor.execute(
+                    f"""
+                    SELECT STRAIGHT_JOIN
+                           d.id_dato, d.fecha, d.fecha_insercion,
+                           d.id_sensor, d.id_variable, d.id_sesion, d.valor,
+                           s.descripcion AS sesion_descripcion,
+                           s.fecha_inicio, s.ubicacion,
+                           CONCAT(st.modelo, ' [', v.descripcion, ' (',
+                                  v.unidad, ')]') AS unidad_medida
+                    FROM sensores_dev.datos AS d
+                    FORCE INDEX (idx_datos_sensor_fecha)
+                    JOIN sensores_dev.variables AS v
+                      ON v.id_variable = d.id_variable
+                    JOIN sensores_dev.sensores AS sens
+                      ON sens.id_sensor = d.id_sensor
+                    JOIN sensores_dev.sensores_tipo AS st
+                      ON st.id_sensor_tipo = sens.id_sensor_tipo
+                    LEFT JOIN sensores_dev.sesiones AS s
+                      ON s.id_sesion = d.id_sesion
+                    WHERE {' AND '.join(clauses)}
+                    ORDER BY d.fecha DESC, d.id_dato DESC
+                    LIMIT %s
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+            finally:
+                cursor.close()
+
+            for row in rows:
+                yield row
+            if len(rows) < MAX_PAGE_SIZE:
+                break
+            last = rows[-1]
+            cursor_value = (last["fecha"], int(last["id_dato"]))
+
     def parse_request() -> tuple[
         date,
         date,
@@ -528,6 +703,13 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         except ValueError as error:
             return jsonify({"status": "fail", "error": str(error)}), 400
 
+        output_format = request.args.get("formato", "web").lower()
+        if output_format not in {"web", "largo"}:
+            return jsonify({
+                "status": "fail",
+                "error": "formato debe ser web o largo",
+            }), 400
+
         lock_file = open(EXPORT_LOCK_PATH, "a+")
         deadline = time.monotonic() + 30
         while True:
@@ -559,34 +741,80 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             buffer = io.StringIO()
             writer = csv.writer(buffer, lineterminator="\n")
             try:
-                writer.writerow(columns)
-                yield buffer.getvalue()
-                buffer.seek(0)
-                buffer.truncate(0)
-
                 connection = connect()
-                for device_id in device_ids:
-                    device, sensor_ids = get_device(connection, device_id)
-                    cursor_value = None
-                    while True:
-                        rows, next_cursor = fetch_page(
-                            connection,
-                            device,
-                            sensor_ids,
-                            start,
-                            end,
-                            cursor_value,
-                            MAX_PAGE_SIZE,
+                prepared_devices = [
+                    (device, sensor_ids)
+                    for device, sensor_ids in (
+                        get_device(connection, device_id)
+                        for device_id in device_ids
+                    )
+                ]
+
+                if output_format == "web":
+                    measurement_columns = sorted({
+                        column
+                        for _, sensor_ids in prepared_devices
+                        for column in get_measurement_columns(
+                            connection, sensor_ids, start, end
                         )
-                        for row in rows:
-                            writer.writerow([_serialize(row.get(column)) for column in columns])
+                    })
+                    output_columns = [
+                        *WIDE_BASE_COLUMNS,
+                        *measurement_columns,
+                        "id_dato_concatenado",
+                    ]
+                    writer.writerow(output_columns)
+                    yield "\ufeff" + buffer.getvalue()
+                    buffer.seek(0)
+                    buffer.truncate(0)
+
+                    for device, sensor_ids in prepared_devices:
+                        streams = [
+                            iter_sensor_rows(connection, sensor_id, start, end)
+                            for sensor_id in sensor_ids
+                        ]
+                        for row in _merge_wide_rows(streams, device):
+                            writer.writerow([
+                                _serialize(row.get(column))
+                                for column in output_columns
+                            ])
+                            if buffer.tell() >= 64 * 1024:
+                                yield buffer.getvalue()
+                                buffer.seek(0)
+                                buffer.truncate(0)
                         if buffer.tell():
                             yield buffer.getvalue()
                             buffer.seek(0)
                             buffer.truncate(0)
-                        if not rows or len(rows) < MAX_PAGE_SIZE:
-                            break
-                        cursor_value = _decode_cursor(next_cursor)
+                else:
+                    writer.writerow(columns)
+                    yield "\ufeff" + buffer.getvalue()
+                    buffer.seek(0)
+                    buffer.truncate(0)
+
+                    for device, sensor_ids in prepared_devices:
+                        cursor_value = None
+                        while True:
+                            rows, next_cursor = fetch_page(
+                                connection,
+                                device,
+                                sensor_ids,
+                                start,
+                                end,
+                                cursor_value,
+                                MAX_PAGE_SIZE,
+                            )
+                            for row in rows:
+                                writer.writerow([
+                                    _serialize(row.get(column)) for column in columns
+                                ])
+                            if buffer.tell():
+                                yield buffer.getvalue()
+                                buffer.seek(0)
+                                buffer.truncate(0)
+                            if not rows or len(rows) < MAX_PAGE_SIZE:
+                                break
+                            cursor_value = _decode_cursor(next_cursor)
             except (LookupError, mysql.connector.Error):
                 current_app.logger.exception(
                     "Error exportando histórico CSV para %s", username

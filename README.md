@@ -49,6 +49,10 @@ acepta uno o varios `id_dispositivo`; si se omiten las fechas, recorre todo el
 histórico disponible. MariaDB se consulta en páginas keyset de 1.000 filas y la
 respuesta se transmite sin construir el archivo completo en memoria.
 
+El CSV predeterminado usa la misma forma ancha que la tabla web y genera sus
+columnas según los sensores de cada dispositivo. Para procesamiento automático
+se puede solicitar la forma normalizada con `formato=largo`.
+
 Solo se permite una exportación CSV activa. Una segunda solicitud espera hasta
 30 segundos y, si el turno sigue ocupado, recibe HTTP 429 con `Retry-After: 30`.
 Esto es un cortacircuito seguro, no una cola persistente de trabajos.

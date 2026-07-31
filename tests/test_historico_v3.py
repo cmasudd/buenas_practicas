@@ -13,6 +13,7 @@ from historico_v3 import (
     _decode_cursor,
     _encode_cursor,
     _parse_date,
+    _merge_wide_rows,
     _serialize,
     _validate_microsoft_issuer,
 )
@@ -49,6 +50,42 @@ class CursorTests(unittest.TestCase):
                 "ver": "2.0",
                 "iss": "https://example.invalid/",
             })
+
+    def test_wide_rows_merge_sensor_series_by_date(self):
+        first = datetime(2026, 7, 31, 15, 15, 30)
+        previous = datetime(2026, 7, 31, 15, 10, 30)
+        common = {
+            "fecha_insercion": first,
+            "id_sesion": None,
+            "sesion_descripcion": None,
+            "fecha_inicio": None,
+            "ubicacion": None,
+        }
+        streams = [
+            iter([
+                {**common, "fecha": first, "id_dato": 3,
+                 "unidad_medida": "Sensor A [Temperatura (°C)]", "valor": 12.5},
+                {**common, "fecha": previous, "fecha_insercion": previous,
+                 "id_dato": 1, "unidad_medida": "Sensor A [Temperatura (°C)]",
+                 "valor": 12.0},
+            ]),
+            iter([
+                {**common, "fecha": first, "id_dato": 4,
+                 "unidad_medida": "Sensor B [Humedad (%)]", "valor": 70},
+            ]),
+        ]
+        rows = list(_merge_wide_rows(streams, {
+            "id_proyecto": 12,
+            "codigo_interno": "AIRE-01",
+            "descripcion": None,
+        }))
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["fecha"], first)
+        self.assertEqual(rows[0]["id_sesion"], "Sin sesión")
+        self.assertEqual(rows[0]["Sensor A [Temperatura (°C)]"], "12.5")
+        self.assertEqual(rows[0]["Sensor B [Humedad (%)]"], "70")
+        self.assertEqual(rows[0]["id_dato_concatenado"], "4, 3")
 
 
 class MicrosoftLoginTests(unittest.TestCase):
