@@ -14,6 +14,7 @@ import base64
 import calendar
 import csv
 import fcntl
+import hashlib
 import heapq
 import io
 import itertools
@@ -48,6 +49,8 @@ MAX_PAGE_SIZE = 1000
 SESSION_COOKIE = "historico_session"
 SESSION_MAX_AGE = 8 * 60 * 60
 EXPORT_LOCK_PATH = "/tmp/api-sensores-historico.lock"
+POWERBI_LOCK_PATH = "/tmp/api-sensores-powerbi.lock"
+MAX_POWERBI_PROJECT_DEVICES = 25
 MICROSOFT_JWKS_URL = (
     "https://login.microsoftonline.com/common/discovery/v2.0/keys"
 )
@@ -147,6 +150,17 @@ def _serialize(value: Any) -> Any:
 def _safe_filename_part(value: Any) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value)).strip("-._")
     return cleaned or "dispositivo"
+
+
+def _api_key_matches(provided: str, expected_hash: str) -> bool:
+    """Compara una API key con su SHA-256 sin guardar el secreto en código."""
+    if not provided or len(provided) > 256:
+        return False
+    normalized_hash = expected_hash.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", normalized_hash):
+        return False
+    calculated_hash = hashlib.sha256(provided.encode("utf-8")).hexdigest()
+    return secrets.compare_digest(calculated_hash, normalized_hash)
 
 
 def _validate_microsoft_issuer(claims: dict[str, Any]) -> None:
@@ -283,6 +297,22 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             401,
         )
 
+    def require_powerbi_api_key():
+        expected_hash = os.getenv("POWERBI_API_KEY_HASH", "")
+        if not expected_hash:
+            current_app.logger.error("POWERBI_API_KEY_HASH no configurado")
+            return jsonify({
+                "status": "fail",
+                "error": "integración Power BI no configurada",
+            }), 503
+        provided = request.headers.get("X-API-Key", "")
+        if not _api_key_matches(provided, expected_hash):
+            return jsonify({
+                "status": "fail",
+                "error": "credencial Power BI inválida",
+            }), 401
+        return None
+
     def session_response(username: str, provider: str = "local") -> Response:
         token = serializer().dumps({"sub": username, "provider": provider})
         response = jsonify({
@@ -397,6 +427,46 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             return device, sensor_ids
         finally:
             cursor.close()
+
+    def get_project_devices(
+        connection,
+        project_id: int,
+    ) -> tuple[dict[str, Any], list[tuple[dict[str, Any], list[int]]]]:
+        cursor = connection.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                """
+                SELECT id_proyecto, nombre, descripcion
+                FROM sensores_dev.proyectos
+                WHERE id_proyecto = %s
+                """,
+                (project_id,),
+            )
+            project = cursor.fetchone()
+            if not project:
+                raise LookupError("proyecto no encontrado")
+
+            cursor.execute(
+                """
+                SELECT id_dispositivo
+                FROM sensores_dev.dispositivos
+                WHERE id_proyecto = %s
+                ORDER BY id_dispositivo
+                """,
+                (project_id,),
+            )
+            device_ids = [int(row["id_dispositivo"]) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
+        if not device_ids:
+            raise LookupError("el proyecto no tiene dispositivos")
+        if len(device_ids) > MAX_POWERBI_PROJECT_DEVICES:
+            raise ValueError(
+                "el proyecto supera el máximo de "
+                f"{MAX_POWERBI_PROJECT_DEVICES} dispositivos"
+            )
+        return project, [get_device(connection, device_id) for device_id in device_ids]
 
     def fetch_page(
         connection,
@@ -846,6 +916,126 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             if connection is not None and connection.is_connected():
                 connection.close()
 
+    @blueprint.get("/powerbi/proyectos/<int:project_id>/datos")
+    def powerbi_project_data(project_id: int):
+        """Entrega el formato ancho legacy mediante páginas V3 protegidas."""
+        auth_error = require_powerbi_api_key()
+        if auth_error:
+            return auth_error
+
+        try:
+            start = _parse_date(request.args.get("fecha_inicio"), "fecha_inicio")
+            end = _parse_date(request.args.get("fecha_fin"), "fecha_fin")
+            if start > end:
+                raise ValueError("fecha_inicio no puede ser posterior a fecha_fin")
+            limit = min(max(int(request.args.get("limite", 500)), 1), MAX_PAGE_SIZE)
+            page_cursor = _decode_preview_cursor(request.args.get("cursor"))
+        except ValueError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 400
+
+        lock_file = open(POWERBI_LOCK_PATH, "a+")
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    lock_file.close()
+                    return (
+                        jsonify({
+                            "status": "queued",
+                            "error": "hay otra consulta Power BI en curso",
+                        }),
+                        429,
+                        {"Retry-After": "30"},
+                    )
+                time.sleep(0.5)
+
+        connection = None
+        try:
+            connection = connect()
+            project, prepared_devices = get_project_devices(connection, project_id)
+            candidates: list[dict[str, Any]] = []
+            latest_before = (
+                datetime.fromisoformat(page_cursor[0])
+                if page_cursor
+                else None
+            )
+
+            for device, sensor_ids in prepared_devices:
+                streams = [
+                    iter_sensor_rows(
+                        connection,
+                        sensor_id,
+                        start,
+                        end,
+                        page_size=500,
+                        latest_before=latest_before,
+                    )
+                    for sensor_id in sensor_ids
+                ]
+                rows: Iterator[dict[str, Any]] = _merge_wide_rows(streams, device)
+                if page_cursor:
+                    unfiltered_rows = rows
+                    rows = (
+                        row for row in unfiltered_rows
+                        if _preview_row_key(row) < page_cursor
+                    )
+                candidates.extend(itertools.islice(rows, limit + 1))
+
+            candidates.sort(key=_preview_row_key, reverse=True)
+            if page_cursor:
+                candidates = [
+                    row for row in candidates
+                    if _preview_row_key(row) < page_cursor
+                ]
+            has_more = len(candidates) > limit
+            page_rows = candidates[:limit]
+            table_data = [
+                {key: _serialize(value) for key, value in row.items()}
+                for row in page_rows
+            ]
+            response = jsonify({
+                "status": "success",
+                "data": {
+                    "tableData": table_data,
+                    "tabla": "datos",
+                    "totalCount": len(table_data),
+                    "has_more": has_more,
+                    "next_cursor": (
+                        _encode_preview_cursor(page_rows[-1])
+                        if has_more and page_rows
+                        else None
+                    ),
+                    "page_size": limit,
+                    "proyecto": {
+                        key: _serialize(value) for key, value in project.items()
+                    },
+                    "range": {
+                        "fecha_inicio": start.isoformat(),
+                        "fecha_fin": end.isoformat(),
+                    },
+                },
+            })
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except LookupError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 404
+        except ValueError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 400
+        except mysql.connector.Error:
+            current_app.logger.exception("Error de MariaDB en Power BI V3")
+            return jsonify({
+                "status": "fail",
+                "error": "error consultando la base de datos",
+            }), 503
+        finally:
+            if connection is not None and connection.is_connected():
+                connection.close()
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
+
     @blueprint.get("/disponibilidad-meses")
     def monthly_measurement_availability():
         """Indica qué meses de un año tienen al menos una medición."""
@@ -1229,6 +1419,7 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
 __all__ = [
     "create_historico_v3_blueprint",
+    "_api_key_matches",
     "_decode_cursor",
     "_encode_cursor",
     "_parse_date",

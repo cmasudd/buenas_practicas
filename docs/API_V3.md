@@ -37,6 +37,29 @@ checkpoint confirmado y puede reanudar tras un corte de red.
 
 Esta ruta requiere la cookie de sesión obtenida mediante `POST /v3/auth/login`.
 
+## Consulta protegida para Power BI
+
+```http
+GET /v3/powerbi/proyectos/13/datos
+    ?fecha_inicio=2025-01-01
+    &fecha_fin=2026-08-03
+    &limite=1000
+    &cursor=CURSOR_OPCIONAL
+X-API-Key: CLAVE_CONFIGURADA
+```
+
+La ruta resuelve todos los dispositivos y sensores del proyecto, entrega la
+misma forma ancha que utilizaba V2 y pagina mediante `next_cursor`. Esto permite
+migrar paneles existentes sin hacer una consulta pesada por cada dispositivo.
+`totalCount` es únicamente el tamaño de la página actual; `has_more` indica si
+queda otra página. No se ejecuta un conteo total sobre el histórico.
+
+La clave se envía solamente en el encabezado `X-API-Key`; el servidor guarda su
+hash SHA-256 en `POWERBI_API_KEY_HASH`. Admite hasta 25 dispositivos por
+proyecto y una sola consulta Power BI simultánea. Las solicitudes concurrentes
+esperan como máximo 30 segundos y después reciben HTTP 429 con
+`Retry-After: 30`.
+
 ## Exportación CSV para el portal
 
 ```http

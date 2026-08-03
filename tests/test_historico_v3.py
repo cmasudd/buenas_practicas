@@ -1,4 +1,5 @@
 import unittest
+import hashlib
 import os
 import time
 from datetime import datetime
@@ -10,6 +11,7 @@ from flask import Flask
 
 from historico_v3 import (
     create_historico_v3_blueprint,
+    _api_key_matches,
     _decode_cursor,
     _decode_preview_cursor,
     _encode_cursor,
@@ -58,6 +60,13 @@ class CursorTests(unittest.TestCase):
 
     def test_csv_null_is_empty(self):
         self.assertEqual(_serialize(None), "")
+
+    def test_powerbi_api_key_hash(self):
+        expected_hash = hashlib.sha256(b"test-powerbi-key").hexdigest()
+        self.assertTrue(_api_key_matches("test-powerbi-key", expected_hash))
+        self.assertFalse(_api_key_matches("wrong-key", expected_hash))
+        self.assertFalse(_api_key_matches("", expected_hash))
+        self.assertFalse(_api_key_matches("test-powerbi-key", "invalid-hash"))
 
     def test_safe_download_filename(self):
         self.assertEqual(_safe_filename_part("AIRE-01"), "AIRE-01")
@@ -179,6 +188,32 @@ class MicrosoftLoginTests(unittest.TestCase):
         cookie = response.headers["Set-Cookie"]
         self.assertIn("Secure", cookie)
         self.assertIn("HttpOnly", cookie)
+
+
+class PowerBIAuthorizationTests(unittest.TestCase):
+    def test_powerbi_endpoint_requires_server_configuration(self):
+        with patch.dict(os.environ, {}, clear=True):
+            app = Flask(__name__)
+            app.register_blueprint(create_historico_v3_blueprint({}))
+            response = app.test_client().get(
+                "/v3/powerbi/proyectos/13/datos"
+                "?fecha_inicio=2025-01-01&fecha_fin=2026-08-03"
+            )
+
+        self.assertEqual(response.status_code, 503)
+
+    def test_powerbi_endpoint_rejects_wrong_key_before_database(self):
+        expected_hash = hashlib.sha256(b"correct-key").hexdigest()
+        with patch.dict(os.environ, {"POWERBI_API_KEY_HASH": expected_hash}):
+            app = Flask(__name__)
+            app.register_blueprint(create_historico_v3_blueprint({}))
+            response = app.test_client().get(
+                "/v3/powerbi/proyectos/13/datos"
+                "?fecha_inicio=2025-01-01&fecha_fin=2026-08-03",
+                headers={"X-API-Key": "wrong-key"},
+            )
+
+        self.assertEqual(response.status_code, 401)
 
 
 if __name__ == "__main__":

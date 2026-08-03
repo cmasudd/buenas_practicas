@@ -1,5 +1,8 @@
 # Power BI con API V3 paginada
 
+> Para una guía desde cero, ejemplos reutilizables y solución de problemas,
+> comenzar en [`docs/powerbi/README.md`](powerbi/README.md).
+
 ## Por qué reemplazar V2
 
 El manual original consulta `listarDatosEstructuradosV2` esperando que todo el
@@ -7,10 +10,11 @@ histórico llegue en una sola respuesta. En períodos grandes esa ruta construye
 un JOIN amplio, ocupa un worker durante mucho tiempo y puede provocar timeouts
 o varias consultas idénticas durante una actualización de Power BI.
 
-V3 recibe un `id_dispositivo`, resuelve internamente sus sensores y devuelve
-como máximo 1.000 mediciones normalizadas. Cada respuesta contiene
-`next_cursor`; Power Query lo envía en la solicitud siguiente. No se utilizan
-`OFFSET`, conteos completos ni una consulta sin límite.
+La ruta específica `/v3/powerbi/proyectos/{id}/datos` recibe un proyecto,
+resuelve internamente sus dispositivos y sensores y devuelve como máximo 1.000
+filas anchas compatibles con V2. Cada respuesta contiene `next_cursor`; Power
+Query lo envía en la solicitud siguiente. No se utilizan `OFFSET`, conteos
+completos ni una consulta sin límite. La ruta exige `X-API-Key`.
 
 ## Prueba real de URA-00
 
@@ -38,23 +42,25 @@ Duplicados:              0
 La prueba fue secuencial. No se deben solicitar páginas concurrentes porque
 cada cursor depende de la página anterior.
 
-## Carga inicial en Power BI Desktop
+## Carga inicial recomendada en Power BI Desktop
 
 1. Abrir **Transformar datos**.
-2. Crear una **Consulta en blanco**.
-3. Abrir **Editor avanzado**.
-4. Pegar el contenido de `examples/powerbi_v3_ura00.m`.
+2. Crear el parámetro de texto `PowerBIKey` con la clave entregada en privado.
+3. Crear la función `fnCargarProyectoPowerBIV3` pegando
+   `examples/powerbi/fnCargarProyectoPowerBIV3.m` en el Editor avanzado.
+4. Crear otra consulta y llamar la función con proyecto y fechas.
 5. Cuando Power BI solicite credenciales para
    `https://api-sensores.cmasccp.cl`, seleccionar **Anónimo**.
 6. Configurar el nivel de privacidad institucional correspondiente.
-7. Aplicar los cambios y comprobar que `id_dato` no tenga duplicados.
+7. Aplicar los cambios y comparar el resultado con el informe V2.
 
 La raíz de `Web.Contents` permanece fija y el endpoint se entrega mediante
 `RelativePath`. Los parámetros se entregan mediante `Query`; esto evita que
 Power BI Service clasifique cada cursor como un origen dinámico diferente.
 
-El campo `valor` llega como texto decimal con punto. La consulta lo transforma
-con cultura `en-US`, conservando la corrección indicada en el manual original.
+Las mediciones llegan en columnas dinámicas, igual que en la tabla web y la
+consulta V2. El ejemplo público normalizado por dispositivo se conserva en
+`examples/powerbi_v3_ura00.m` para modelos nuevos y pruebas aisladas.
 
 ## Actualizaciones programadas
 
@@ -96,10 +102,9 @@ particiones.
 ## Límites operativos
 
 - Usar `limite=1000`; valores mayores son reducidos por el servidor.
-- Una sola cadena de páginas por dispositivo.
+- Una sola cadena de páginas por proyecto.
 - Definir siempre fecha inicial y final.
-- Para varios dispositivos, crear una consulta por dispositivo y evitar que el
-  servicio actualice muchas consultas históricas en paralelo.
+- No crear consultas paralelas por cada dispositivo del mismo proyecto.
 - Para millones de filas, conservar la carga inicial fuera de los horarios de
   mayor uso y utilizar actualización incremental posteriormente.
 - No usar `response.json()` sobre NDJSON desde Power BI: el endpoint paginado
@@ -107,7 +112,8 @@ particiones.
 
 ## Resultado recomendado
 
-La API V3 recupera todos los datos sin perder registros, pero divide el trabajo
-en consultas indexadas y acotadas. Para URA-00 la carga completa ya quedó
-validada. El siguiente paso es reemplazar en el archivo `.pbix` la consulta V2
-por el código M de ejemplo y publicar una actualización de prueba.
+La API V3 recupera el rango completo sin perder registros, pero divide el
+trabajo en consultas indexadas y acotadas. Para URA-00 la carga normalizada ya
+quedó validada; la ruta de proyecto también se probó en el proyecto 13 con
+páginas consecutivas sin solapamiento. El siguiente paso es reemplazar en una
+copia del `.pbix` la consulta V2 por el código M protegido y comparar el panel.

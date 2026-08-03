@@ -18,6 +18,8 @@ una API V3 por dispositivo.
 - `docs/API_V3.md`: contrato y decisiones operativas.
 - `docs/POWER_BI_V3.md`: carga completa e incremental desde Power BI mediante
   paginación por cursor.
+- `docs/powerbi/README.md`: kit completo para usuarios que comienzan desde cero,
+  con tutoriales, seguridad, publicación y solución de problemas.
 - `docs/INTEGRACION.md`: registro junto a las rutas legacy.
 - `docs/HISTORICO_CSV_GITHUB.md`: arquitectura aplicada para publicar
   históricos mensuales en GitHub sin saturar MariaDB.
