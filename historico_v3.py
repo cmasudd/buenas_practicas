@@ -333,6 +333,39 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.post("/auth/login")
     def login():
+        """Inicia una sesión local para descargas históricas V3.
+        ---
+        tags:
+          - V3 - Autenticación
+        summary: Iniciar sesión para descargas V3
+        description: >
+          Valida las credenciales configuradas por el administrador y crea una
+          cookie segura. La contraseña nunca debe incluirse en la URL.
+        consumes:
+          - application/json
+        produces:
+          - application/json
+        parameters:
+          - in: body
+            name: credenciales
+            required: true
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: usuario
+                password:
+                  type: string
+                  format: password
+                  example: su-contraseña
+        responses:
+          200:
+            description: Sesión iniciada; el navegador recibe una cookie segura.
+          401:
+            description: Credenciales inválidas.
+        """
         payload = request.get_json(silent=True) or {}
         username = str(payload.get("username", ""))
         password = str(payload.get("password", ""))
@@ -351,6 +384,35 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.post("/auth/microsoft")
     def microsoft_login():
+        """Intercambia un ID token Microsoft por una sesión V3.
+        ---
+        tags:
+          - V3 - Autenticación
+        summary: Iniciar sesión V3 con Microsoft
+        description: >
+          Valida firma, audiencia, emisor y vencimiento del ID token. Está
+          pensada para el portal web; no se debe pegar un token real en Swagger.
+        consumes:
+          - application/json
+        produces:
+          - application/json
+        parameters:
+          - in: body
+            name: token
+            required: true
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token:
+                  type: string
+                  description: ID token emitido por Microsoft Entra ID.
+        responses:
+          200:
+            description: Sesión Microsoft validada.
+          401:
+            description: Token ausente, inválido o vencido.
+        """
         payload = request.get_json(silent=True) or {}
         id_token = str(payload.get("id_token", ""))
         client_id = os.getenv(
@@ -386,6 +448,26 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/auth/status")
     def auth_status():
+        """Comprueba si la cookie V3 sigue vigente.
+        ---
+        tags:
+          - V3 - Autenticación
+        summary: Consultar estado de la sesión V3
+        produces:
+          - application/json
+        responses:
+          200:
+            description: La sesión está autenticada.
+            examples:
+              application/json:
+                authenticated: true
+                user: usuario@ejemplo.cl
+          401:
+            description: No existe una sesión válida.
+            examples:
+              application/json:
+                authenticated: false
+        """
         username = authenticated_user()
         if not username:
             return jsonify({"authenticated": False}), 401
@@ -393,6 +475,17 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.post("/auth/logout")
     def logout():
+        """Cierra la sesión de descargas V3.
+        ---
+        tags:
+          - V3 - Autenticación
+        summary: Cerrar sesión V3
+        produces:
+          - application/json
+        responses:
+          200:
+            description: Cookie de sesión eliminada.
+        """
         response = jsonify({"status": "success"})
         response.delete_cookie(SESSION_COOKIE, path="/v3")
         return response
@@ -683,6 +776,76 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/dispositivos/<int:device_id>/mediciones")
     def list_measurements(device_id: int):
+        """Lista mediciones V3 por dispositivo mediante cursor.
+        ---
+        tags:
+          - V3 - Datos estructurados
+        summary: Listar mediciones paginadas de un dispositivo
+        description: >
+          Devuelve datos en formato largo, una fila por medición. El servidor
+          resuelve automáticamente los sensores del dispositivo. Para continuar,
+          envíe next_cursor como cursor; no use offset.
+        produces:
+          - application/json
+        parameters:
+          - name: device_id
+            in: path
+            type: integer
+            required: true
+            description: ID interno del dispositivo.
+          - name: fecha_inicio
+            in: query
+            type: string
+            format: date
+            required: true
+            description: Primer día incluido, formato YYYY-MM-DD.
+          - name: fecha_fin
+            in: query
+            type: string
+            format: date
+            required: true
+            description: Último día incluido, formato YYYY-MM-DD.
+          - name: limite
+            in: query
+            type: integer
+            default: 500
+            minimum: 1
+            maximum: 1000
+            required: false
+            description: Mediciones por página.
+          - name: cursor
+            in: query
+            type: string
+            required: false
+            description: Valor next_cursor recibido en la página anterior.
+        responses:
+          200:
+            description: Página de mediciones obtenida correctamente.
+            examples:
+              application/json:
+                status: success
+                data:
+                  dispositivo:
+                    id_dispositivo: 225
+                    codigo_interno: HIRIPRO-V6
+                    id_proyecto: 18
+                  mediciones:
+                    - id_dato: 59928911
+                      fecha: '2026-05-20T12:39:30'
+                      id_sensor: 219
+                      id_variable: 31
+                      variable_descripcion: Dióxido de Carbono
+                      unidad: ppm
+                      valor: 491.6
+                  next_cursor: cursor-opaco
+                  has_more: true
+          400:
+            description: Fechas, límite o cursor inválidos.
+          404:
+            description: Dispositivo no encontrado.
+          503:
+            description: Base de datos temporalmente no disponible.
+        """
         try:
             start, end, page_size, cursor_value = parse_request()
         except ValueError as error:
@@ -725,6 +888,72 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/vista-previa")
     def latest_preview():
+        """Entrega una tabla estructurada y paginada para visualización.
+        ---
+        tags:
+          - V3 - Datos estructurados
+        summary: Vista estructurada de datos recientes o de un rango
+        description: >
+          Devuelve formato ancho: una fila por fecha y una columna por variable,
+          equivalente a la tabla del portal. Acepta hasta 10 dispositivos y usa
+          cursor para mostrar páginas anteriores sin consultas masivas.
+        produces:
+          - application/json
+        parameters:
+          - name: id_dispositivo
+            in: query
+            type: string
+            required: true
+            description: Uno o más IDs separados por coma; máximo 10.
+            example: '92,225'
+          - name: fecha_inicio
+            in: query
+            type: string
+            format: date
+            required: false
+            description: Primer día incluido; si se omite comienza en 1970.
+          - name: fecha_fin
+            in: query
+            type: string
+            format: date
+            required: false
+            description: Último día incluido; si se omite usa hoy.
+          - name: limite
+            in: query
+            type: integer
+            default: 25
+            minimum: 1
+            maximum: 100
+            required: false
+            description: Filas estructuradas por página.
+          - name: cursor
+            in: query
+            type: string
+            required: false
+            description: next_cursor de la página anterior.
+        responses:
+          200:
+            description: Tabla estructurada obtenida correctamente.
+            examples:
+              application/json:
+                status: success
+                data:
+                  tableData:
+                    - fecha: '2026-07-31T12:00:00'
+                      codigo_interno: AIRE-01
+                      PMS5003-PM2.5: 12.4
+                  totalCount: 1
+                  preview: true
+                  has_more: true
+                  next_cursor: cursor-opaco
+                  page_size: 25
+          400:
+            description: Parámetros inválidos o más de 10 dispositivos.
+          404:
+            description: Algún dispositivo no fue encontrado.
+          503:
+            description: Base de datos temporalmente no disponible.
+        """
         raw_device_ids = request.args.get("id_dispositivo", "")
         try:
             device_ids = list(dict.fromkeys(
@@ -829,7 +1058,46 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/disponibilidad")
     def measurement_availability():
-        """Indica qué días de un mes tienen datos sin contar sus registros."""
+        """Indica qué días de un mes tienen datos sin contar sus registros.
+        ---
+        tags:
+          - V3 - Datos estructurados
+        summary: Listar días con datos dentro de un mes
+        description: >
+          Consulta liviana para pintar el calendario. No descarga mediciones ni
+          calcula conteos; solo indica si existe al menos un dato en cada día.
+        produces:
+          - application/json
+        parameters:
+          - name: id_dispositivo
+            in: query
+            type: string
+            required: true
+            description: Uno o más IDs separados por coma; máximo 10.
+          - name: mes
+            in: query
+            type: string
+            required: true
+            pattern: '^\\d{4}-\\d{2}$'
+            description: Mes consultado en formato YYYY-MM.
+            example: '2026-07'
+        responses:
+          200:
+            description: Días que contienen al menos una medición.
+            examples:
+              application/json:
+                status: success
+                data:
+                  month: '2026-07'
+                  days: ['2026-07-01', '2026-07-02']
+                  device_ids: [225]
+          400:
+            description: Dispositivo o mes inválido.
+          404:
+            description: Dispositivo no encontrado.
+          503:
+            description: Base de datos temporalmente no disponible.
+        """
         raw_device_ids = request.args.get("id_dispositivo", "")
         month_value = request.args.get("mes", "")
         try:
@@ -918,7 +1186,65 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/powerbi/proyectos/<int:project_id>/datos")
     def powerbi_project_data(project_id: int):
-        """Entrega el formato ancho legacy mediante páginas V3 protegidas."""
+        """Entrega el formato ancho legacy mediante páginas V3 protegidas.
+        ---
+        tags:
+          - V3 - Power BI
+        summary: Listar un proyecto completo para Power BI
+        description: >
+          Devuelve formato ancho compatible con V2 y paginación por cursor. La
+          clave se envía en X-API-Key, nunca en la URL. Las fechas son obligatorias.
+          Si otra carga está activa puede responder 429 con Retry-After.
+        produces:
+          - application/json
+        parameters:
+          - name: project_id
+            in: path
+            type: integer
+            required: true
+            description: ID interno del proyecto.
+          - name: X-API-Key
+            in: header
+            type: string
+            format: password
+            required: true
+            description: Clave privada configurada para Power BI.
+          - name: fecha_inicio
+            in: query
+            type: string
+            format: date
+            required: true
+          - name: fecha_fin
+            in: query
+            type: string
+            format: date
+            required: true
+          - name: limite
+            in: query
+            type: integer
+            default: 500
+            minimum: 1
+            maximum: 1000
+            required: false
+          - name: cursor
+            in: query
+            type: string
+            required: false
+            description: next_cursor de la página anterior.
+        responses:
+          200:
+            description: Página de datos anchos del proyecto.
+          400:
+            description: Fechas, límite o cursor inválidos.
+          401:
+            description: Clave ausente o incorrecta.
+          404:
+            description: Proyecto sin dispositivos o no encontrado.
+          429:
+            description: Otra carga Power BI está en curso; reintente después.
+          503:
+            description: Integración no configurada o base no disponible.
+        """
         auth_error = require_powerbi_api_key()
         if auth_error:
             return auth_error
@@ -1038,7 +1364,47 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/disponibilidad-meses")
     def monthly_measurement_availability():
-        """Indica qué meses de un año tienen al menos una medición."""
+        """Indica qué meses de un año tienen al menos una medición.
+        ---
+        tags:
+          - V3 - Datos estructurados
+        summary: Listar meses con datos dentro de un año
+        description: >
+          Consulta liviana para el calendario anual. No descarga mediciones ni
+          cuenta registros; devuelve únicamente los meses que tienen datos.
+        produces:
+          - application/json
+        parameters:
+          - name: id_dispositivo
+            in: query
+            type: string
+            required: true
+            description: Uno o más IDs separados por coma; máximo 10.
+          - name: anio
+            in: query
+            type: integer
+            minimum: 1970
+            maximum: 2100
+            required: true
+            description: Año de cuatro cifras.
+            example: 2026
+        responses:
+          200:
+            description: Meses que contienen al menos una medición.
+            examples:
+              application/json:
+                status: success
+                data:
+                  year: 2026
+                  months: ['2026-01', '2026-02', '2026-07']
+                  device_ids: [225]
+          400:
+            description: Dispositivo o año inválido.
+          404:
+            description: Dispositivo no encontrado.
+          503:
+            description: Base de datos temporalmente no disponible.
+        """
         raw_device_ids = request.args.get("id_dispositivo", "")
         try:
             device_ids = list(dict.fromkeys(
@@ -1133,6 +1499,53 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/dispositivos/<int:device_id>/historico.ndjson")
     def stream_history(device_id: int):
+        """Descarga mediciones V3 como NDJSON transmitido por bloques.
+        ---
+        tags:
+          - V3 - Descargas
+        summary: Descargar histórico largo de un dispositivo
+        description: >
+          Requiere una cookie obtenida en /v3/auth/login o /v3/auth/microsoft.
+          Cada línea es un JSON independiente. El cliente debe leer el stream y
+          no usar response.json(). Las fechas son obligatorias.
+        produces:
+          - application/x-ndjson
+        parameters:
+          - name: device_id
+            in: path
+            type: integer
+            required: true
+          - name: fecha_inicio
+            in: query
+            type: string
+            format: date
+            required: true
+          - name: fecha_fin
+            in: query
+            type: string
+            format: date
+            required: true
+          - name: limite
+            in: query
+            type: integer
+            default: 500
+            minimum: 1
+            maximum: 1000
+            required: false
+            description: Tamaño de cada bloque interno.
+          - name: cursor
+            in: query
+            type: string
+            required: false
+            description: Checkpoint desde el cual reanudar.
+        responses:
+          200:
+            description: Stream NDJSON; termina con una línea _meta complete.
+          400:
+            description: Fechas, límite o cursor inválidos.
+          401:
+            description: Sesión requerida.
+        """
         _, auth_error = require_authentication()
         if auth_error:
             return auth_error
@@ -1224,6 +1637,57 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
 
     @blueprint.get("/historicos.csv")
     def stream_csv_history():
+        """Descarga históricos V3 en CSV ancho o largo.
+        ---
+        tags:
+          - V3 - Descargas
+        summary: Descargar CSV histórico de uno o más dispositivos
+        description: >
+          Requiere cookie de sesión V3. El formato web genera una fila por fecha
+          y columnas dinámicas como el portal; largo genera una fila por medición.
+          Se aceptan hasta 25 dispositivos. Las descargas se serializan para
+          proteger MariaDB y pueden responder 429.
+        produces:
+          - text/csv
+          - application/json
+        parameters:
+          - name: id_dispositivo
+            in: query
+            type: string
+            required: true
+            description: Uno o más IDs separados por coma; máximo 25.
+          - name: fecha_inicio
+            in: query
+            type: string
+            format: date
+            default: '1970-01-01'
+            required: false
+          - name: fecha_fin
+            in: query
+            type: string
+            format: date
+            required: false
+            description: Si se omite usa la fecha actual.
+          - name: formato
+            in: query
+            type: string
+            enum: [web, largo]
+            default: web
+            required: false
+        responses:
+          200:
+            description: CSV UTF-8 con BOM y nombre por dispositivo/rango.
+          400:
+            description: Dispositivo, fechas o formato inválidos.
+          401:
+            description: Sesión requerida.
+          404:
+            description: Algún dispositivo no fue encontrado.
+          429:
+            description: Otra descarga está en curso; reintente después.
+          503:
+            description: Base de datos temporalmente no disponible.
+        """
         username, auth_error = require_authentication()
         if auth_error:
             return auth_error
