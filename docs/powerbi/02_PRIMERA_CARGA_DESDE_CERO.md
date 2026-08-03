@@ -77,6 +77,8 @@ dispositivo_descripcion
 
 Las mediciones aparecen en columnas cuyos nombres incluyen modelo, variable y
 unidad. Es el formato ancho utilizado por la web y por las consultas V2.
+`id_sesion` debe aparecer como texto, porque algunas filas utilizan el valor
+`Sin sesión`.
 
 ## Paso 6: cargar los datos
 

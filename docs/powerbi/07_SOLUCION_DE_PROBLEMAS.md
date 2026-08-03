@@ -1,5 +1,22 @@
 # 7. Solución de problemas
 
+## Descarga todas las filas y después muestra un error de conversión
+
+Si Power BI llega a 14.196 filas del proyecto 13 y después informa que no puede
+convertir `Sin sesión` a número, se está usando la primera versión de la
+función. Reemplazar completamente su contenido por la versión actual de:
+
+```text
+examples/powerbi/fnCargarProyectoPowerBIV3.m
+```
+
+`id_sesion` pertenece al formato ancho compatible con V2 y puede contener un ID
+o el texto `Sin sesión`; por eso la función actual lo conserva como texto.
+
+Después de reemplazarla, seleccionar **Actualizar vista previa** y luego
+**Cerrar y aplicar**. No es necesario modificar la API ni volver a crear el
+informe.
+
 ## Power BI muestra solo 1.000 filas
 
 Causa: se pegó una URL directa en **Obtener datos → Web**.

@@ -85,7 +85,7 @@ let
         )
     ),
     IntegerColumns = List.Intersect(
-        {Table.ColumnNames(TypedDates), {"id_sesion", "id_proyecto"}}
+        {Table.ColumnNames(TypedDates), {"id_proyecto"}}
     ),
     TypedIds = Table.TransformColumns(
         TypedDates,
@@ -99,6 +99,11 @@ let
                 Int64.Type
             }
         )
-    )
+    ),
+    // id_sesion puede ser un número o el texto "Sin sesión" en el formato V2.
+    // Se conserva como texto para que la conversión no falle al terminar la carga.
+    TypedSession = if Table.HasColumns(TypedIds, "id_sesion")
+        then Table.TransformColumnTypes(TypedIds, {{"id_sesion", type text}})
+        else TypedIds
 in
-    TypedIds
+    TypedSession
