@@ -16,6 +16,8 @@ una API V3 por dispositivo.
 - `historico_v3.py`: Blueprint Flask que implementa V3.
 - `download_v3.py`: cliente de descarga con checkpoints, reintentos y gzip.
 - `docs/API_V3.md`: contrato y decisiones operativas.
+- `docs/POWER_BI_V3.md`: carga completa e incremental desde Power BI mediante
+  paginación por cursor.
 - `docs/INTEGRACION.md`: registro junto a las rutas legacy.
 - `docs/HISTORICO_CSV_GITHUB.md`: arquitectura aplicada para publicar
   históricos mensuales en GitHub sin saturar MariaDB.
