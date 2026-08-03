@@ -15,6 +15,11 @@ Lea los documentos en este orden:
 6. [Seguridad y claves](06_SEGURIDAD_Y_CLAVES.md).
 7. [Solución de problemas](07_SOLUCION_DE_PROBLEMAS.md).
 8. [Guía para quien administra el sistema](08_GUIA_DEL_ADMINISTRADOR.md).
+9. [Corregir la función y programar el refresco](09_CORREGIR_Y_PROGRAMAR_REFRESCO.md).
+
+Si la carga llegó a 14.196 filas y después falló, vaya directamente a la guía
+9. Allí se explica cómo reemplazar la función y activar el refresco automático
+sin reconstruir el informe.
 
 ## Archivos para copiar en Power Query
 

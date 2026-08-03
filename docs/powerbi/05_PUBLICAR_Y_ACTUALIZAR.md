@@ -34,7 +34,8 @@ local para este origen web.
 
 1. Publicar el `.pbix` en un workspace de Power BI Service.
 2. Abrir el **modelo semántico → Configuración**.
-3. En **Parámetros**, comprobar `IdProyecto`, fechas y `PowerBIKey`.
+3. En **Parámetros**, comprobar `PowerBIKey`. Si la plantilla también expone
+   proyecto o fechas como parámetros, revisarlos en la misma pantalla.
 4. En **Credenciales del origen de datos**, editar
    `https://api-sensores.cmasccp.cl` y seleccionar **Anónimo** con privacidad
    **Organizacional**. La clave sigue viajando dentro de `X-API-Key`.
@@ -78,3 +79,7 @@ En capacidad compartida se permiten hasta ocho actualizaciones programadas al
 día y cada actualización importada dispone normalmente de hasta dos horas. Para
 este servidor se recomienda empezar con una diaria, aunque la licencia permita
 más.
+
+Para un recorrido completo desde el error de las 14.196 filas hasta el horario
+en la nube, consultar
+[Corregir la función y programar el refresco](09_CORREGIR_Y_PROGRAMAR_REFRESCO.md).
