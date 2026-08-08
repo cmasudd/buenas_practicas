@@ -46,11 +46,10 @@ lo que dos inserciones simultáneas podían usar el ID de otro usuario.
 
 ## Publicación del historial
 
-La bitácora quedó publicada en `cmasudd/buenas_practicas`, commit `baf97f3`.
-Los commits y tags de `SensorsWebApp` están en el repositorio local productivo.
-El intento de publicarlos en `CmasCcp/SensorsWebApp` fue rechazado con HTTP 403
-porque la cuenta configurada `cmasudd` no tiene permiso sobre esa organización.
-No se creó un repositorio alternativo para evitar dividir la fuente canónica.
+La bitácora quedó publicada en `cmasudd/buenas_practicas`. Después se creó el
+repositorio canónico `cmasudd/SensorsWebApp`, donde quedaron publicados la rama
+`desarrollo`, los commits y los tags. `CmasCcp/SensorsWebApp` se conserva como
+upstream histórico de solo lectura para esta instalación.
 
 ## Rollback
 

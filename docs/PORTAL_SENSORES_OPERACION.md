@@ -6,7 +6,8 @@
 |---|---|
 | Portal público | `https://sensores.cmasccp.cl/` |
 | Fuente de producción | `/var/www/sensores` |
-| Repositorio | `https://github.com/CmasCcp/SensorsWebApp` |
+| Repositorio canónico | `https://github.com/cmasudd/SensorsWebApp` |
+| Repositorio histórico upstream | `https://github.com/CmasCcp/SensorsWebApp` |
 | API | `/var/www/api_sensores`, `https://api-sensores.cmasccp.cl` |
 | Proceso web | PM2 `sensores`, puerto 8103 |
 | Directorio servido | `/var/www/sensores/public` |
@@ -45,3 +46,14 @@ contraseñas, hashes reales, cookies, tokens o archivos `.env`.
 La visibilidad de botones en React no protege los endpoints de escritura. La
 autorización servidor-side de `agregarDatos`, `modificarDatos` y `eliminarDatos`
 permanece como mejora urgente.
+
+## Política de borrado de dispositivos
+
+- Un dispositivo solo se elimina físicamente cuando ninguno de sus sensores
+  tiene mediciones.
+- Antes de eliminar se bloquean las filas implicadas y se quitan las
+  asociaciones; solo se eliminan sensores que queden huérfanos y sin datos.
+- Si existe historial, el API responde 409 y el administrador ofrece cambiar el
+  dispositivo al estado `Inactivo` (ID 2), conservando todas las mediciones.
+- El borrado forzado con historial no está habilitado. Está registrado como
+  propuesta futura de alto riesgo en la bitácora del 8 de agosto de 2026.
