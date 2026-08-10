@@ -34,6 +34,16 @@ from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash
+from portal_users import (
+    DuplicatePortalUserError,
+    LastAdministratorError,
+    PortalUserError,
+    authenticate_user as authenticate_portal_user,
+    create_user as create_portal_user,
+    get_user_by_email,
+    list_users as list_portal_users,
+    update_user as update_portal_user,
+)
 from flask import (
     Blueprint,
     Response,
@@ -277,7 +287,7 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             raise RuntimeError("HISTORICO_SESSION_SECRET no configurado")
         return URLSafeTimedSerializer(secret, salt="historico-v3")
 
-    def authenticated_user() -> str | None:
+    def authenticated_identity() -> dict[str, str] | None:
         token = request.cookies.get(SESSION_COOKIE)
         if not token:
             return None
@@ -285,8 +295,22 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             payload = serializer().loads(token, max_age=SESSION_MAX_AGE)
         except (BadSignature, SignatureExpired):
             return None
-        username = payload.get("sub") if isinstance(payload, dict) else None
-        return username if isinstance(username, str) else None
+        if not isinstance(payload, dict):
+            return None
+        username = payload.get("sub")
+        if not isinstance(username, str):
+            return None
+        provider = str(payload.get("provider") or "local")
+        role = str(payload.get("role") or (
+            "administrador" if provider == "microsoft" else "visita"
+        ))
+        if role not in {"visita", "administrador"}:
+            role = "visita"
+        return {"username": username, "provider": provider, "role": role}
+
+    def authenticated_user() -> str | None:
+        identity = authenticated_identity()
+        return identity["username"] if identity else None
 
     def require_authentication():
         username = authenticated_user()
@@ -296,6 +320,20 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             jsonify({"status": "fail", "error": "autenticación requerida"}),
             401,
         )
+
+    def require_administrator():
+        identity = authenticated_identity()
+        if not identity:
+            return None, (
+                jsonify({"status": "fail", "error": "autenticación requerida"}),
+                401,
+            )
+        if identity["role"] != "administrador":
+            return None, (
+                jsonify({"status": "fail", "error": "permiso de administrador requerido"}),
+                403,
+            )
+        return identity, None
 
     def require_powerbi_api_key():
         expected_hash = os.getenv("POWERBI_API_KEY_HASH", "")
@@ -313,12 +351,21 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             }), 401
         return None
 
-    def session_response(username: str, provider: str = "local") -> Response:
-        token = serializer().dumps({"sub": username, "provider": provider})
+    def session_response(
+        username: str,
+        provider: str = "local",
+        role: str = "visita",
+    ) -> Response:
+        token = serializer().dumps({
+            "sub": username,
+            "provider": provider,
+            "role": role,
+        })
         response = jsonify({
             "status": "success",
             "user": username,
             "provider": provider,
+            "role": role,
         })
         response.set_cookie(
             SESSION_COOKIE,
@@ -369,18 +416,30 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         payload = request.get_json(silent=True) or {}
         username = str(payload.get("username", ""))
         password = str(payload.get("password", ""))
+        portal_user = None
+        connection = connect()
+        try:
+            portal_user = authenticate_portal_user(connection, username, password)
+        finally:
+            connection.close()
+        if portal_user:
+            return session_response(
+                portal_user["email"],
+                role=portal_user["rol"],
+            )
+
         expected_user = os.getenv("HISTORICO_USER", "")
         password_hash = os.getenv("HISTORICO_PASSWORD_HASH", "")
-        valid = (
+        legacy_valid = (
             bool(expected_user)
             and bool(password_hash)
             and secrets.compare_digest(username, expected_user)
             and check_password_hash(password_hash, password)
         )
-        if not valid:
+        if not legacy_valid:
             return jsonify({"status": "fail", "error": "credenciales inválidas"}), 401
 
-        return session_response(username)
+        return session_response(username, role="visita")
 
     @blueprint.post("/auth/microsoft")
     def microsoft_login():
@@ -444,7 +503,17 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
             or claims.get("name")
             or claims["sub"]
         )
-        return session_response(username, provider="microsoft")
+        role = "administrador"
+        connection = connect()
+        try:
+            registered = get_user_by_email(connection, username)
+        finally:
+            connection.close()
+        if registered:
+            if not bool(registered["activo"]):
+                return jsonify({"status": "fail", "error": "usuario inactivo"}), 403
+            role = registered["rol"]
+        return session_response(username, provider="microsoft", role=role)
 
     @blueprint.get("/auth/status")
     def auth_status():
@@ -468,10 +537,15 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
               application/json:
                 authenticated: false
         """
-        username = authenticated_user()
-        if not username:
+        identity = authenticated_identity()
+        if not identity:
             return jsonify({"authenticated": False}), 401
-        return jsonify({"authenticated": True, "user": username})
+        return jsonify({
+            "authenticated": True,
+            "user": identity["username"],
+            "provider": identity["provider"],
+            "role": identity["role"],
+        })
 
     @blueprint.post("/auth/logout")
     def logout():
@@ -489,6 +563,151 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         response = jsonify({"status": "success"})
         response.delete_cookie(SESSION_COOKIE, path="/v3")
         return response
+
+    @blueprint.get("/admin/users")
+    def admin_list_users():
+        """Lista las cuentas locales sin exponer hashes.
+        ---
+        tags:
+          - V3 - Usuarios
+        summary: Listar usuarios del portal
+        description: Requiere una sesión con rol administrador.
+        responses:
+          200:
+            description: Lista de usuarios con correo, rol y estado.
+          401:
+            description: No existe una sesión válida.
+          403:
+            description: La sesión corresponde a una visita.
+        """
+        _, auth_error = require_administrator()
+        if auth_error:
+            return auth_error
+        connection = connect()
+        try:
+            users = list_portal_users(connection)
+        finally:
+            connection.close()
+        return jsonify({"status": "success", "users": users})
+
+    @blueprint.post("/admin/users")
+    def admin_create_user():
+        """Crea una cuenta local con contraseña cifrada.
+        ---
+        tags:
+          - V3 - Usuarios
+        summary: Crear usuario del portal
+        description: Requiere rol administrador. La contraseña se recibe solo en JSON y se almacena como hash.
+        consumes:
+          - application/json
+        parameters:
+          - in: body
+            name: usuario
+            required: true
+            schema:
+              type: object
+              required: [email, password, role]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                  minLength: 10
+                role:
+                  type: string
+                  enum: [visita, administrador]
+        responses:
+          201:
+            description: Usuario creado; la respuesta nunca incluye el hash.
+          400:
+            description: Datos inválidos.
+          403:
+            description: Permiso de administrador requerido.
+          409:
+            description: El correo ya está registrado.
+        """
+        _, auth_error = require_administrator()
+        if auth_error:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        connection = connect()
+        try:
+            user = create_portal_user(
+                connection,
+                payload.get("email"),
+                payload.get("password"),
+                payload.get("role"),
+            )
+        except DuplicatePortalUserError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 409
+        except PortalUserError as error:
+            return jsonify({"status": "fail", "error": str(error)}), 400
+        finally:
+            connection.close()
+        return jsonify({"status": "success", "user": user}), 201
+
+    @blueprint.put("/admin/users/<int:user_id>")
+    def admin_update_user(user_id: int):
+        """Modifica rol, estado o contraseña de una cuenta.
+        ---
+        tags:
+          - V3 - Usuarios
+        summary: Actualizar usuario del portal
+        description: Desactivar reemplaza el borrado físico y conserva la auditoría básica.
+        consumes:
+          - application/json
+        parameters:
+          - in: path
+            name: user_id
+            type: integer
+            required: true
+          - in: body
+            name: cambios
+            required: true
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [visita, administrador]
+                active:
+                  type: boolean
+                password:
+                  type: string
+                  format: password
+                  minLength: 10
+        responses:
+          200:
+            description: Usuario actualizado.
+          400:
+            description: Datos inválidos o se intentó retirar el último administrador local.
+          403:
+            description: Permiso de administrador requerido.
+          404:
+            description: Usuario inexistente.
+        """
+        _, auth_error = require_administrator()
+        if auth_error:
+            return auth_error
+        payload = request.get_json(silent=True) or {}
+        connection = connect()
+        try:
+            user = update_portal_user(
+                connection,
+                user_id,
+                role=payload.get("role") if "role" in payload else None,
+                active=payload.get("active") if "active" in payload else None,
+                password=payload.get("password") if "password" in payload else None,
+            )
+        except (PortalUserError, LastAdministratorError) as error:
+            return jsonify({"status": "fail", "error": str(error)}), 400
+        finally:
+            connection.close()
+        if not user:
+            return jsonify({"status": "fail", "error": "Usuario no encontrado"}), 404
+        return jsonify({"status": "success", "user": user})
 
     def get_device(connection, device_id: int) -> tuple[dict[str, Any], list[int]]:
         cursor = connection.cursor(dictionary=True)

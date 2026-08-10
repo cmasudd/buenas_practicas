@@ -43,6 +43,11 @@ La sesión local V3 se configura con `HISTORICO_USER` y
 solamente los nombres de variables y el procedimiento. Nunca se registran
 contraseñas, hashes reales, cookies, tokens o archivos `.env`.
 
+Las cuentas nuevas viven en la tabla `portal_usuarios`; sus contraseñas se
+guardan exclusivamente como hash. Se administran desde `Administrador >
+Usuarios`. En vez de borrar cuentas se desactivan. Swagger se consulta en
+`https://api-sensores.cmasccp.cl/apidocs/` y también desde `Protocolos`.
+
 La visibilidad de botones en React no protege los endpoints de escritura. La
 autorización servidor-side de `agregarDatos`, `modificarDatos` y `eliminarDatos`
 permanece como mejora urgente.

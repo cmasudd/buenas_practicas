@@ -175,7 +175,9 @@ class MicrosoftLoginTests(unittest.TestCase):
         with patch.dict(os.environ, {
             "HISTORICO_SESSION_SECRET": "test-session-secret",
             "HISTORICO_MICROSOFT_CLIENT_ID": client_id,
-        }):
+        }), patch("historico_v3.mysql.connector.connect"), patch(
+            "historico_v3.get_user_by_email", return_value=None
+        ):
             app = Flask(__name__)
             app.register_blueprint(create_historico_v3_blueprint({}))
             response = app.test_client().post(

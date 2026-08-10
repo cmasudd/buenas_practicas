@@ -148,15 +148,33 @@ Content-Type: application/json
 ```
 
 El servidor guarda una cookie `Secure`, `HttpOnly` y `SameSite=Strict` con una
-vigencia de ocho horas. La clave de firma, usuario y hash de contraseña se leen
-desde `HISTORICO_SESSION_SECRET`, `HISTORICO_USER` y
-`HISTORICO_PASSWORD_HASH`; nunca deben subirse al repositorio.
+vigencia de ocho horas. Las cuentas locales se guardan en `portal_usuarios` con
+correo normalizado, hash Werkzeug, rol `visita` o `administrador` y estado
+activo. `HISTORICO_USER` y `HISTORICO_PASSWORD_HASH` se conservan como acceso
+legacy compatible; nunca deben subirse al repositorio.
 
 Los usuarios Microsoft del portal intercambian su ID token mediante
 `POST /v3/auth/microsoft`. El backend valida firma RS256 con las claves JWKS de
 Microsoft, audiencia, vencimiento, tenant y emisor antes de crear la misma
 sesión HTTP-only. El identificador público de la aplicación se configura en
 `HISTORICO_MICROSOFT_CLIENT_ID`.
+
+## Administración de usuarios
+
+```http
+GET  /v3/admin/users
+POST /v3/admin/users
+PUT  /v3/admin/users/{id_usuario}
+```
+
+Estas rutas requieren una cookie con rol `administrador`. Permiten listar,
+crear, cambiar rol, cambiar contraseña y activar/desactivar cuentas. Los hashes
+nunca se incluyen en respuestas. No existe borrado físico: desactivar conserva
+la trazabilidad básica. El API impide retirar el último administrador local
+activo.
+
+Swagger en `/apidocs/` documenta interactivamente estos contratos y la página
+`Protocolos` del portal permite visualizarlo embebido o abrirlo en otra pestaña.
 
 ## Decisiones de seguridad operativa
 
@@ -166,6 +184,7 @@ sesión HTTP-only. El identificador público de la aplicación se configura en
 - Sin `COUNT(*)`, `OFFSET`, Pandas ni pivot.
 - Una conexión por descarga y dispositivos procesados secuencialmente.
 - Autenticación obligatoria en las rutas de descarga.
+- Autorización de administrador verificada en servidor para gestionar usuarios.
 - Exclusión mutua entre exportaciones CSV para proteger MariaDB.
 - Los endpoints legacy siguen disponibles durante la migración.
 
