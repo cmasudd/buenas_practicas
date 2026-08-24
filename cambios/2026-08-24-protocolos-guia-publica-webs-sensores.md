@@ -42,6 +42,11 @@ Copia completa del directorio servido:
 /home/cmas/backups/sensores-protocolos-before-2026-08-24-1705/public
 ```
 
+Los archivos fuente productivos anteriores `ProtocolosPage.jsx` y `Navbar.jsx`
+también quedaron bajo `source-before/` dentro del mismo respaldo. Luego se
+sincronizaron con el commit canónico para que un build futuro no restaure la
+versión antigua. Los demás cambios locales del worktree no se tocaron.
+
 Hashes anteriores:
 
 ```text
@@ -105,5 +110,8 @@ La reversión no toca la API ni la base de datos:
    `desarrollo` si también se necesita retirar el cambio del repositorio.
 5. Conservar los assets nuevos hasta terminar la ventana de verificación; no es
    necesario reiniciar PM2.
+6. Si se revierte también el worktree productivo, restaurar desde
+   `source-before/` solamente `ProtocolosPage.jsx` y `Navbar.jsx`, y retirar los
+   nuevos CSS/pruebas solo después de confirmar que no están referenciados.
 
 No se usa `git reset --hard` ni se elimina el directorio productivo.
