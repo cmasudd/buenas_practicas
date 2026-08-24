@@ -120,3 +120,38 @@ Para volver exactamente al estado anterior sin reescribir el historial:
 
 La etiqueta `aire-prod-v1-photos-chartfix-2026-08-24` permite recuperar o
 comparar rápidamente el artefacto funcional de este cambio.
+
+## Ajuste posterior de footer, logos y descarga responsable
+
+Referencia: commit `ee34f86b` del repositorio Aire Aconcagua. GitHub Pages se
+desplegó correctamente en la ejecución `32762700154`.
+
+- El contacto quedó en un footer fijo visible en Monitoreo, Proyecto y Fotos.
+- Los cuatro logos tienen variables CSS independientes al comienzo de
+  `index.html`. El Gobierno Regional usa por defecto 160 px de altura máxima y
+  640 px de ancho máximo.
+- El disclaimer aumentó a 820 px de ancho, título de 24 px y texto de 16 px.
+- El botón de descarga abre primero el disclaimer y presenta allí el botón
+  final `Descargar CSV`, sin casilla de aceptación.
+- Se añadió `.gitattributes` para normalizar como LF los archivos de texto y
+  evitar cambios masivos de finales de línea al editar con Visual Studio Code.
+
+Se preservó la edición manual recibida y se respaldó antes de intervenir en:
+
+```text
+/home/cmas/backups/aireaconcagua-manual-before-footer-disclaimer-2026-08-24/
+```
+
+Pruebas: sintaxis JavaScript correcta, 4 de 4 pruebas unitarias correctas,
+validación estática del flujo de descarga y revisión visual local a 1440 ×
+1000. El HTML público coincidió byte por byte con el artefacto Git:
+
+```text
+index.html
+de3ba68a5fae9ab222518ed2180319f9ac3a2d1bca4a28e6d276a18743c0d048
+```
+
+Reversión: adquirir `/tmp/aireaconcagua-update.lock`, ejecutar `git revert`
+sobre `ee34f86b`, probar, subir el commit de reversión, esperar GitHub Pages y
+liberar el lock. El respaldo anterior permite comparar o recuperar la edición
+manual si fuera necesario.
