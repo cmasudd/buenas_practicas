@@ -161,3 +161,12 @@ orientación de `las-vegas-02.jpeg`. Se respaldó la edición en
 `/home/cmas/backups/aireaconcagua-manual-las-vegas-rotation-2026-08-24/` y el
 despliegue final `32766322087` terminó correctamente. El commit horario
 `2aa29e0b`, creado inmediatamente antes, quedó conservado en la misma historia.
+
+Corrección definitiva: el giro CSS anterior recortaba la fotografía dentro de
+su tarjeta. El commit `7deadda9` rotó de forma determinística el archivo
+`las-vegas-02.jpeg` a 621 × 1108 px y retiró el `transform` CSS. El respaldo
+está en
+`/home/cmas/backups/aireaconcagua-las-vegas-photo-before-upright-2026-08-24/`.
+Las pruebas unitarias fueron correctas, GitHub Pages terminó correctamente en
+la ejecución `32768148379` y el archivo público coincidió con el local:
+`39aa40f050ed0909a93c76802d0128ae7744d61bc20b269e60343ecec98a2f6c`.
