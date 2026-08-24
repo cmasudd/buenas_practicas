@@ -155,3 +155,9 @@ Reversión: adquirir `/tmp/aireaconcagua-update.lock`, ejecutar `git revert`
 sobre `ee34f86b`, probar, subir el commit de reversión, esperar GitHub Pages y
 liberar el lock. El respaldo anterior permite comparar o recuperar la edición
 manual si fuera necesario.
+
+Ajuste manual posterior: el commit `bef28328` corrigió en 90 grados la
+orientación de `las-vegas-02.jpeg`. Se respaldó la edición en
+`/home/cmas/backups/aireaconcagua-manual-las-vegas-rotation-2026-08-24/` y el
+despliegue final `32766322087` terminó correctamente. El commit horario
+`2aa29e0b`, creado inmediatamente antes, quedó conservado en la misma historia.
