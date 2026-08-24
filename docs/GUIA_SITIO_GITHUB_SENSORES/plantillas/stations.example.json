@@ -1,0 +1,11 @@
+[
+  {
+    "device_id": 123,
+    "code": "ESTACION-01",
+    "name": "Escuela Ejemplo",
+    "location": "Comuna Ejemplo",
+    "latitude": -32.00000,
+    "longitude": -70.00000,
+    "variables": ["mp25", "mp10", "temp", "hum"]
+  }
+]

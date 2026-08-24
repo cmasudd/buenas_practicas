@@ -1,0 +1,11 @@
+[Unit]
+Description=Actualizar CSV públicos de sensores cada hora
+
+[Timer]
+OnCalendar=*-*-* *:07:00
+RandomizedDelaySec=120
+Persistent=true
+Unit=sensor-data-update.service
+
+[Install]
+WantedBy=timers.target

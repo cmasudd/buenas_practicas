@@ -23,6 +23,9 @@ una API V3 por dispositivo.
 - `docs/INTEGRACION.md`: registro junto a las rutas legacy.
 - `docs/HISTORICO_CSV_GITHUB.md`: arquitectura aplicada para publicar
   históricos mensuales en GitHub sin saturar MariaDB.
+- `docs/GUIA_SITIO_GITHUB_SENSORES/`: guía autocontenida y plantillas para que
+  otra persona cree una web de sensores en GitHub Pages, separe web y datos y
+  automatice la publicación local de forma segura.
 - `docs/PORTAL_SENSORES_OPERACION.md`: mapa, publicación y reversión segura del
   portal web.
 - `cambios/`: bitácora fechada con commits, pruebas, artefactos y rollback.
