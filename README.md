@@ -11,6 +11,18 @@ una API V3 por dispositivo.
 - Permitir descargas NDJSON reanudables y CSV desde la web autenticada.
 - Acotar memoria y trabajo de MariaDB.
 
+## Principio previo a toda publicación
+
+Antes de decidir qué datos se exportan, grafican o envían a un repositorio, se
+deben perfilar los dispositivos, sensores y variables relevantes. Hay que
+confirmar significado, unidad, cobertura, rangos, nulos, constantes,
+centinelas, duplicados, privacidad y crecimiento esperado. Una variable con
+significado o calidad no comprobados se reserva y no se publica por suposición.
+
+El procedimiento y la clasificación `publicar`, `diagnóstico`, `reservar` o
+`excluir` están en
+[`08_PERFILAR_DATOS_ANTES_DE_PUBLICAR.md`](docs/GUIA_SITIO_GITHUB_SENSORES/08_PERFILAR_DATOS_ANTES_DE_PUBLICAR.md).
+
 ## Componentes
 
 - `historico_v3.py`: Blueprint Flask que implementa V3.

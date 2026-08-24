@@ -38,6 +38,7 @@ Aconcagua, sigue siendo válida para un portal pequeño.
 5. [Operación, capacidad y recuperación](05_OPERACION_Y_RECUPERACION.md)
 6. [Lista de entrega](06_CHECKLIST_DE_ENTREGA.md)
 7. [Implementación en el servidor CMAS](07_IMPLEMENTACION_EN_SERVIDOR_CMAS.md)
+8. [Perfilar los datos antes de publicarlos](08_PERFILAR_DATOS_ANTES_DE_PUBLICAR.md)
 
 Las plantillas copiables están en [`plantillas/`](plantillas/README.md).
 
