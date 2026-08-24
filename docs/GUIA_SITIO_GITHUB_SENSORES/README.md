@@ -37,6 +37,7 @@ Aconcagua, sigue siendo válida para un portal pequeño.
 4. [Automatización local](04_AUTOMATIZACION_LOCAL.md)
 5. [Operación, capacidad y recuperación](05_OPERACION_Y_RECUPERACION.md)
 6. [Lista de entrega](06_CHECKLIST_DE_ENTREGA.md)
+7. [Implementación en el servidor CMAS](07_IMPLEMENTACION_EN_SERVIDOR_CMAS.md)
 
 Las plantillas copiables están en [`plantillas/`](plantillas/README.md).
 
