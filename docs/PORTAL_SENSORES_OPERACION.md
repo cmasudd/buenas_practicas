@@ -46,7 +46,10 @@ contraseñas, hashes reales, cookies, tokens o archivos `.env`.
 Las cuentas nuevas viven en la tabla `portal_usuarios`; sus contraseñas se
 guardan exclusivamente como hash. Se administran desde `Administrador >
 Usuarios`. En vez de borrar cuentas se desactivan. Swagger se consulta en
-`https://api-sensores.cmasccp.cl/apidocs/` y también desde `Protocolos`.
+`https://api-sensores.cmasccp.cl/apidocs/` y también desde `Protocolos` después
+de iniciar sesión. La guía para perfilar datos, crear webs estáticas y publicar
+CSV mensuales es pública en `https://sensores.cmasccp.cl/protocolos`; no incluye
+rutas internas ni valores de configuración protegidos.
 
 La visibilidad de botones en React no protege los endpoints de escritura. La
 autorización servidor-side de `agregarDatos`, `modificarDatos` y `eliminarDatos`
