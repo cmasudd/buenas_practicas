@@ -439,7 +439,9 @@ def create_historico_v3_blueprint(db_config: dict[str, Any]) -> Blueprint:
         if not legacy_valid:
             return jsonify({"status": "fail", "error": "credenciales inválidas"}), 401
 
-        return session_response(username, role="visita")
+        # El acceso local heredado conserva sus credenciales por compatibilidad,
+        # pero no debe presentarse en el portal con el nombre "admin".
+        return session_response("visita", role="visita")
 
     @blueprint.post("/auth/microsoft")
     def microsoft_login():

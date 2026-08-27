@@ -3,11 +3,12 @@ import hashlib
 import os
 import time
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask
+from werkzeug.security import generate_password_hash
 
 from historico_v3 import (
     create_historico_v3_blueprint,
@@ -190,6 +191,29 @@ class MicrosoftLoginTests(unittest.TestCase):
         cookie = response.headers["Set-Cookie"]
         self.assertIn("Secure", cookie)
         self.assertIn("HttpOnly", cookie)
+
+
+class LegacyVisitorLoginTests(unittest.TestCase):
+    def test_legacy_admin_credentials_are_presented_as_visitor(self):
+        connection = MagicMock()
+        with patch.dict(os.environ, {
+            "HISTORICO_SESSION_SECRET": "test-session-secret",
+            "HISTORICO_USER": "admin",
+            "HISTORICO_PASSWORD_HASH": generate_password_hash("admin"),
+        }), patch(
+            "historico_v3.mysql.connector.connect",
+            return_value=connection,
+        ), patch("historico_v3.authenticate_portal_user", return_value=None):
+            app = Flask(__name__)
+            app.register_blueprint(create_historico_v3_blueprint({}))
+            response = app.test_client().post(
+                "/v3/auth/login",
+                json={"username": "admin", "password": "admin"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["user"], "visita")
+        self.assertEqual(response.get_json()["role"], "visita")
 
 
 class PowerBIAuthorizationTests(unittest.TestCase):
