@@ -40,6 +40,9 @@ El procedimiento y la clasificación `publicar`, `diagnóstico`, `reservar` o
   automatice la publicación local de forma segura.
 - `docs/PORTAL_SENSORES_OPERACION.md`: mapa, publicación y reversión segura del
   portal web.
+- `docs/LICENCIAMIENTOS_PROPUESTOS.md`: matriz de licencias abierta propuesta
+  para proyectos C+, marcada expresamente como pendiente de revisión jurídica
+  e institucional.
 - `cambios/`: bitácora fechada con commits, pruebas, artefactos y rollback.
 - `tests/`: pruebas unitarias de cursores y validación.
 
