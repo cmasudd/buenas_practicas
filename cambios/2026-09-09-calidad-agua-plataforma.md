@@ -8,12 +8,15 @@ Repositorio: `cmasudd/calidadAgua`
 - Web estática responsive con identidad C+/UDD.
 - Mapa Leaflet para AGUA-01, AGUA-02, AGUA-03 y URA-01.
 - Gráficos de pH, conductividad, temperaturas, oxígeno disuelto, voltaje y CSQ.
-- Descarga por selección y descarga conjunta del histórico.
+- Descarga por selección y ZIP del histórico con un CSV separado y nombrado
+  por estación.
 - Histórico mensual, `manifest.json` y `latest.csv` generados junto a MariaDB.
 - Publicación horaria y consulta en vivo de una lectura por estación cada diez
   minutos.
 - Comparación orientativa de pH y conductividad con NCh 1333 para agua de
   riego, sin presentarla como certificación ni evaluación oficial.
+- Mediciones individuales para 24 horas y 7 días; promedio diario con banda
+  mínimo–máximo para 30 días y todo el histórico.
 
 ## Perfil y limpieza
 
@@ -37,3 +40,10 @@ La web y los datos quedan versionados en Git. Ante una regresión se revierte el
 commit afectado. El histórico se puede reconstruir desde MariaDB con
 `scripts/export_monthly_csv.py --all`. La automatización se desactiva retirando
 su única entrada de cron; nunca deben mantenerse dos programadores activos.
+
+## Operación instalada
+
+GitHub Pages publica desde `main` en la raíz del repositorio. El clon exclusivo
+`calidadAgua-publisher` ejecuta la actualización una vez por hora, en el minuto
+27, protegido por `flock`. La consulta del navegador a la API permanece
+separada y se repite cada diez minutos.
