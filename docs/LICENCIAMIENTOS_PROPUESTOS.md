@@ -45,10 +45,19 @@ web y sus scripts, ODbL-1.0 para la base, licencia de contenidos aún por
 determinar, CC BY-SA 4.0 para documentación y reserva de marcas C+/UDD. Los
 archivos del proyecto deben expresar que todo lo anterior continúa en revisión.
 
+## Caso `aireAysen`
+
+La misma matriz se registra como propuesta para `cmasudd/aireAysen`, con una
+restricción adicional: el repositorio fuente `AleReb/data_Aysen_exports` no
+declaraba licencia al revisar el proyecto. La ODbL para la base derivada sólo
+podrá adoptarse después de confirmar titularidad, autorización de
+redistribución y compatibilidad con las condiciones de Google/Looker Studio.
+Mientras tanto, la fuente se cita expresamente y no se instala un `LICENSE`
+definitivo.
+
 ## Fuente
 
 Resumen operativo basado en
 [`cmasudd/Propuesta_Licencia`](https://github.com/cmasudd/Propuesta_Licencia),
 versión de propuesta 0.1. La fuente también declara expresamente que requiere
 revisión jurídica y de transferencia tecnológica de UDD.
-
