@@ -63,3 +63,17 @@ Se corrigió una regla CSS que mantenía visible la capa de estado vacío sobre
 el lienzo aun cuando Chart.js había construido correctamente el gráfico. La
 prueba en navegador cubre un sensor vigente, uno inactivo, un rango manual y
 la navegación desde el punto compartido del mapa.
+
+## Escala cromática de concentraciones
+
+El gráfico y el mapa usan una escala inspirada en la lectura rápida de
+Sensor.Community: verde para concentraciones bajas, amarillo al aumentar,
+rojo en la referencia diaria chilena y morado por encima de ella. Para MP2,5
+el rojo corresponde a 50 µg/m³ y para MP10 a 130 µg/m³. MP1 mantiene la misma
+ayuda cromática, rotulada explícitamente como escala visual sin norma chilena
+general.
+
+La leyenda llega a `≥500`, pero no actúa como tope: el eje vertical conserva
+su ajuste automático y muestra valores de 999 µg/m³ o superiores. El punto
+compartido del mapa se divide en dos círculos, uno para el sensor 31 y otro
+para el 39, coloreados según la variable seleccionada.
