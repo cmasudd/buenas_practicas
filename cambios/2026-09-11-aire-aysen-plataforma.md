@@ -12,6 +12,11 @@ Repositorio: `cmasudd/aireAysen`
   describen en el área general de Coyhaique sin inventar posiciones.
 - Gráficos horarios para 24 horas y 7 días; promedios diarios con banda
   mínimo–máximo para 30 días y el histórico completo.
+- Selector de fechas inicial y final para consultar intervalos antiguos.
+- Los períodos relativos de sensores inactivos terminan en la última lectura
+  de cada instrumento, en vez de usar la fecha global de actualización.
+- El punto georreferenciado presenta las últimas lecturas de los sensores 31
+  y 39 y permite abrir directamente el histórico de cada uno.
 - Descarga por selección y ZIP generado en GitHub Pages con un CSV separado
   por sensor.
 - Referencias orientativas DS 12/2011 para MP2,5 y DS 12/2021 para MP10.
@@ -51,3 +56,10 @@ El cron se desactiva retirando su única entrada. La copia anterior del crontab
 se guardó en `/tmp/crontab-before-aireAysen-2026-09-11`. Los datos se pueden
 reconstruir ejecutando `python3 scripts/download_looker.py` en el clon
 publicador.
+
+## Corrección del visualizador
+
+Se corrigió una regla CSS que mantenía visible la capa de estado vacío sobre
+el lienzo aun cuando Chart.js había construido correctamente el gráfico. La
+prueba en navegador cubre un sensor vigente, uno inactivo, un rango manual y
+la navegación desde el punto compartido del mapa.
