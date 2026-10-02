@@ -69,6 +69,10 @@ sin commit que ya tenía el worktree productivo. Después de recargar PM2
   correctos; 12.049 registros y última fila `2026-10-02T18:45:20Z`.
 - Comprobación pública: `index.html`, `portal.json` y CSV descargados desde
   Pages coinciden byte a byte con el clon publicador.
+- Prueba Chrome autenticada sobre Pages: modo `csv`, insignia DEMO oculta,
+  estado `Mediciones actualizadas`, cero excepciones JavaScript y 12.050 filas
+  en memoria. El CSV horario tenía 12.049; la fila adicional, de las 15:50
+  hora de Chile, llegó correctamente desde la API viva.
 - Revisión de secretos: correcta; no hay `.env`, claves ni tokens en Git.
 
 SHA-256 públicos:
