@@ -36,10 +36,14 @@ se reservan como ausentes; los ceros de material particulado se conservan.
 - `baee318`: portal real, exportador, backfill, validador y documentación.
 - `160d14e`: permisos ejecutables de los scripts del publicador.
 - `b1c85af`: primera actualización automática comprobada, 12.049 registros.
+- `f0538bf`: log local ignorado y reintento de commits pendientes aunque no
+  aparezcan mediciones nuevas.
 - Pages terminó en estado `built` para `b1c85af8b01faac77c21bf116f0e9f30a1a70bc5`.
 
 La primera ejecución automática incorporó dos ciclos llegados después del
-backfill y publicó el commit sin intervención manual.
+backfill y publicó el commit sin intervención manual. Una segunda ejecución
+con el comando exacto del cron no generó commit vacío, dejó el worktree limpio
+y confirmó `Everything up-to-date`.
 
 ## Cambio acotado del API
 
@@ -91,7 +95,7 @@ El crontab anterior quedó protegido con permiso `0600` en
 
 1. Restaurar el crontab respaldado o retirar sólo la entrada HIRI232.
 2. Adquirir `/tmp/hiripro-232-update.lock`.
-3. Revertir en Git `b1c85af`, `160d14e` y `baee318` mediante `git revert` y
+3. Revertir en Git `f0538bf`, `b1c85af`, `160d14e` y `baee318` mediante `git revert` y
    esperar el build de Pages; no usar `reset --hard`.
 4. Si se retira la lectura viva, restaurar `app.py.before`, verificar su hash y
    recargar `api_sensores`.
