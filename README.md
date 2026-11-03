@@ -30,6 +30,9 @@ El procedimiento y la clasificación `publicar`, `diagnóstico`, `reservar` o
 - `docs/API_V3.md`: contrato y decisiones operativas.
 - `docs/POWER_BI_V3.md`: carga completa e incremental desde Power BI mediante
   paginación por cursor.
+- [`Manual breve para la construcción y publicación de dashboards en Power BI`](docs/Manual_breve_para_la_construcción_y_publicación_de_dashboards_en_Power_BI_a_partir_de_la_API_de_sensores.pdf):
+  referencia institucional de dos páginas para importar, transformar, publicar
+  y programar informes.
 - `docs/powerbi/README.md`: kit completo para usuarios que comienzan desde cero,
   con tutoriales, seguridad, publicación y solución de problemas.
 - `docs/INTEGRACION.md`: registro junto a las rutas legacy.
@@ -40,6 +43,9 @@ El procedimiento y la clasificación `publicar`, `diagnóstico`, `reservar` o
   automatice la publicación local de forma segura.
 - `docs/PORTAL_SENSORES_OPERACION.md`: mapa, publicación y reversión segura del
   portal web.
+- `docs/README_CLONACION_SSD_RECUPERACION.md`: estado de la migración del
+  sistema al SSD Kingston y procedimientos de arranque, montaje y recuperación
+  desde GRUB, UEFI o una terminal Live.
 - `docs/LICENCIAMIENTOS_PROPUESTOS.md`: matriz de licencias abierta propuesta
   para proyectos C+, marcada expresamente como pendiente de revisión jurídica
   e institucional.
