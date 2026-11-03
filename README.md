@@ -25,32 +25,31 @@ El procedimiento y la clasificación `publicar`, `diagnóstico`, `reservar` o
 
 ## Componentes
 
-- `historico_v3.py`: Blueprint Flask que implementa V3.
-- `download_v3.py`: cliente de descarga con checkpoints, reintentos y gzip.
-- `docs/API_V3.md`: contrato y decisiones operativas.
-- `docs/POWER_BI_V3.md`: carga completa e incremental desde Power BI mediante
+- [`historico_v3.py`](historico_v3.py): Blueprint Flask que implementa V3.
+- [`download_v3.py`](download_v3.py): cliente de descarga con checkpoints,
+  reintentos y gzip.
+- [Contrato y decisiones de la API V3](docs/API_V3.md).
+- [Carga completa e incremental desde Power BI](docs/POWER_BI_V3.md) mediante
   paginación por cursor.
 - [`Manual breve para la construcción y publicación de dashboards en Power BI`](docs/Manual_breve_para_la_construcción_y_publicación_de_dashboards_en_Power_BI_a_partir_de_la_API_de_sensores.pdf):
   referencia institucional de dos páginas para importar, transformar, publicar
   y programar informes.
-- `docs/powerbi/README.md`: kit completo para usuarios que comienzan desde cero,
-  con tutoriales, seguridad, publicación y solución de problemas.
-- `docs/INTEGRACION.md`: registro junto a las rutas legacy.
-- `docs/HISTORICO_CSV_GITHUB.md`: arquitectura aplicada para publicar
-  históricos mensuales en GitHub sin saturar MariaDB.
-- `docs/GUIA_SITIO_GITHUB_SENSORES/`: guía autocontenida y plantillas para que
-  otra persona cree una web de sensores en GitHub Pages, separe web y datos y
-  automatice la publicación local de forma segura.
-- `docs/PORTAL_SENSORES_OPERACION.md`: mapa, publicación y reversión segura del
-  portal web.
-- `docs/README_CLONACION_SSD_RECUPERACION.md`: estado de la migración del
-  sistema al SSD Kingston y procedimientos de arranque, montaje y recuperación
-  desde GRUB, UEFI o una terminal Live.
-- `docs/LICENCIAMIENTOS_PROPUESTOS.md`: matriz de licencias abierta propuesta
-  para proyectos C+, marcada expresamente como pendiente de revisión jurídica
-  e institucional.
-- `cambios/`: bitácora fechada con commits, pruebas, artefactos y rollback.
-- `tests/`: pruebas unitarias de cursores y validación.
+- [Kit completo de Power BI](docs/powerbi/README.md) para usuarios que comienzan
+  desde cero, con tutoriales, seguridad, publicación y solución de problemas.
+- [Integración con las rutas legacy](docs/INTEGRACION.md).
+- [Publicación de históricos CSV mensuales en GitHub](docs/HISTORICO_CSV_GITHUB.md)
+  sin saturar MariaDB.
+- [Guía autocontenida para sitios GitHub de sensores](docs/GUIA_SITIO_GITHUB_SENSORES/README.md)
+  y sus plantillas para separar web y datos y automatizar la publicación local
+  de forma segura.
+- [Operación y reversión segura del portal de sensores](docs/PORTAL_SENSORES_OPERACION.md).
+- [Clonación al SSD y recuperación del servidor](docs/README_CLONACION_SSD_RECUPERACION.md),
+  con procedimientos de arranque, montaje y recuperación desde GRUB, UEFI o
+  una terminal Live.
+- [Licenciamientos propuestos](docs/LICENCIAMIENTOS_PROPUESTOS.md), pendientes
+  de revisión jurídica e institucional.
+- [Bitácora de cambios](cambios/) con commits, pruebas, artefactos y rollback.
+- [Pruebas automatizadas](tests/) de cursores y validación.
 
 ## Uso del descargador
 
