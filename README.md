@@ -43,6 +43,7 @@ El procedimiento y la clasificación `publicar`, `diagnóstico`, `reservar` o
   y sus plantillas para separar web y datos y automatizar la publicación local
   de forma segura.
 - [Operación y reversión segura del portal de sensores](docs/PORTAL_SENSORES_OPERACION.md).
+- [Propuesta de telemetría paralela, imágenes y migración de firmware](docs/TELEMETRIA_PARALELA/README.md), diseño sin implementación.
 - [Clonación al SSD y recuperación del servidor](docs/README_CLONACION_SSD_RECUPERACION.md),
   con procedimientos de arranque, montaje y recuperación desde GRUB, UEFI o
   una terminal Live.
